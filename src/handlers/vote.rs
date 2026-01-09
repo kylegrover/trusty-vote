@@ -287,12 +287,12 @@ pub async fn handle_vote_button(
                                                    .disabled(*current_rank == 1)
                                             })
                                             .create_button(|btn| {
+                                                let is_at_bottom = *current_rank == option_ranks.values().filter(|&&r| r > 0).count() as i32;
+                                                let is_unranked = *current_rank == 0;
                                                 btn.custom_id(format!("rankDown_{}_{}", poll.id, option.id))
                                                    .emoji('⬇')
                                                    .style(ButtonStyle::Primary)
-                                                   .disabled(*current_rank == 0 
-                                                             || *current_rank 
-                                                                == option_ranks.values().filter(|&&r| r > 0).count() as i32)
+                                                   .disabled(is_unranked || is_at_bottom)
                                             })
                                             .create_button(|btn| {
                                                 btn.custom_id(format!("rankRemove_{}_{}", poll.id, option.id))
