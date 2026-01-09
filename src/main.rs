@@ -2,10 +2,11 @@ mod commands;
 mod db;
 mod handlers;
 mod models;
+mod tasks;
 mod voting;
-mod tasks; 
 
 use db::Database;
+use log::{error, info};
 use serenity::async_trait;
 use serenity::model::application::command::Command;
 use serenity::model::application::interaction::Interaction;
@@ -13,7 +14,6 @@ use serenity::model::gateway::Ready;
 use serenity::prelude::*;
 use std::env;
 use std::sync::Arc;
-use log::{info, error}; 
 
 // Custom ID format for components:
 // We use camelCase format for action names (e.g., starSelect, pluralityVote)
@@ -42,7 +42,8 @@ impl EventHandler for Bot {
 
         // Register slash commands globally or for specific guilds
         let commands = Command::set_global_application_commands(&ctx.http, |commands_builder| {
-            commands_builder.create_application_command(|command| commands::poll::create_poll_command(command))
+            commands_builder
+                .create_application_command(|command| commands::poll::create_poll_command(command))
             // Add other commands here
         })
         .await;

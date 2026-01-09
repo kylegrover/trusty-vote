@@ -15,7 +15,7 @@ pub struct Poll {
     pub created_at: DateTime<Utc>,
     pub ends_at: Option<DateTime<Utc>>,
     pub is_active: bool,
-    pub message_id: Option<String>, // Added message_id
+    pub message_id: Option<String>,         // Added message_id
     pub allowed_roles: Option<Vec<String>>, // Restrict voting to these role IDs (if set)
 }
 
@@ -73,7 +73,7 @@ impl Poll {
             .collect();
 
         let created_at = Utc::now();
-        
+
         // Calculate end time if duration is provided
         let ends_at = match duration_minutes {
             Some(0) => None, // 0 means manual ending
