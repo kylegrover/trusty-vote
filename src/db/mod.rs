@@ -86,8 +86,18 @@ impl Database {
                 ends_at TIMESTAMPTZ,
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 message_id TEXT,
-                allowed_roles TEXT[]
+                allowed_roles TEXT[],
+                allow_vote_sharing BOOLEAN NOT NULL DEFAULT FALSE
             );
+            "#,
+        )
+        .execute(pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            ALTER TABLE polls
+            ADD COLUMN IF NOT EXISTS allow_vote_sharing BOOLEAN NOT NULL DEFAULT FALSE;
             "#,
         )
         .execute(pool)
@@ -131,8 +141,8 @@ impl Database {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         sqlx::query(
             r#"
-            INSERT INTO polls (id, guild_id, channel_id, creator_id, question, voting_method, created_at, ends_at, is_active, message_id, allowed_roles)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10)
+            INSERT INTO polls (id, guild_id, channel_id, creator_id, question, voting_method, created_at, ends_at, is_active, message_id, allowed_roles, allow_vote_sharing)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11)
             "#,
         )
         .bind(&poll.id)
@@ -149,7 +159,8 @@ impl Database {
         .bind(poll.created_at)
         .bind(poll.ends_at)
         .bind(poll.is_active)
-        .bind(&poll.allowed_roles)
+            .bind(&poll.allowed_roles)
+            .bind(poll.allow_vote_sharing)
         .execute(&self.pool)
         .await?;
 
@@ -200,7 +211,7 @@ impl Database {
         // Get the poll
         let poll_row = sqlx::query(
             r#"
-            SELECT id, guild_id, channel_id, creator_id, question, voting_method, created_at, ends_at, is_active, message_id, allowed_roles 
+            SELECT id, guild_id, channel_id, creator_id, question, voting_method, created_at, ends_at, is_active, message_id, allowed_roles, allow_vote_sharing 
             FROM polls 
             WHERE id = $1
             "#,
@@ -220,6 +231,7 @@ impl Database {
         let ends_at: Option<DateTime<Utc>> = poll_row.try_get("ends_at").ok();
         let is_active = poll_row.get::<bool, _>("is_active");
         let message_id: Option<String> = poll_row.get("message_id");
+        let allow_vote_sharing = poll_row.get::<bool, _>("allow_vote_sharing");
 
         // Parse voting method
         let voting_method = match voting_method_str.as_str() {
@@ -265,6 +277,7 @@ impl Database {
             allowed_roles: poll_row
                 .try_get::<Option<Vec<String>>, _>("allowed_roles")
                 .unwrap_or(None),
+            allow_vote_sharing,
         };
 
         Ok(poll)
@@ -351,6 +364,7 @@ impl Database {
                 is_active: true,
                 message_id: None,
                 allowed_roles: None,
+                allow_vote_sharing: false,
             })
             .collect();
 
@@ -395,6 +409,7 @@ impl Database {
                 is_active: false,
                 message_id: None,
                 allowed_roles: None,
+                allow_vote_sharing: false,
             })
             .collect();
         Ok(partial_polls)

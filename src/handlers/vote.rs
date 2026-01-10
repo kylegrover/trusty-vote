@@ -852,16 +852,19 @@ pub async fn handle_done_voting(
                 .interaction_response_data(|message| {
                     message.content(&vote_summary).components(|c| {
                         c.create_action_row(|row| {
-                            row.create_button(|btn| {
-                                btn.custom_id(format!("voteChange_{}", poll_id))
-                                    .label("Change My Vote")
-                                    .style(ButtonStyle::Secondary)
-                            })
-                            .create_button(|btn| {
-                                btn.custom_id(format!("shareVote_{}", poll_id))
-                                    .label("Share My Vote")
-                                    .style(ButtonStyle::Primary)
-                            })
+                                row.create_button(|btn| {
+                                    btn.custom_id(format!("voteChange_{}", poll_id))
+                                        .label("Change My Vote")
+                                        .style(ButtonStyle::Secondary)
+                                });
+                                if poll.allow_vote_sharing {
+                                    row.create_button(|btn| {
+                                        btn.custom_id(format!("shareVote_{}", poll_id))
+                                            .label("Share My Vote")
+                                            .style(ButtonStyle::Primary)
+                                    });
+                                }
+                                row
                         })
                     })
                 })

@@ -456,6 +456,20 @@ pub async fn handle_component(
         }
     } else if custom_id.starts_with("shareVote_") {
         if let Some(p) = poll {
+            if !p.allow_vote_sharing {
+                component
+                    .create_interaction_response(&ctx.http, |response| {
+                        response
+                            .kind(InteractionResponseType::ChannelMessageWithSource)
+                            .interaction_response_data(|message| {
+                                message
+                                    .content("Vote sharing is disabled for this poll.")
+                                    .ephemeral(true)
+                            })
+                    })
+                    .await?;
+                return Ok(());
+            }
             let user_votes = database
                 .get_user_poll_votes(&p.id, &component.user.id.to_string())
                 .await?;

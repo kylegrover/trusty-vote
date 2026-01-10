@@ -62,6 +62,13 @@ pub fn create_poll_command(
                         .kind(serenity::model::application::command::CommandOptionType::Role)
                         .required(false)
                 })
+                .create_sub_option(|sub_option| {
+                    sub_option
+                        .name("share_vote")
+                        .description("Allow voters to share their vote after voting (optional)")
+                        .kind(serenity::model::application::command::CommandOptionType::Boolean)
+                        .required(false)
+                })
             // .create_sub_option(|sub_option| {
             //     sub_option
             //         .name("anonymous")
@@ -204,6 +211,7 @@ async fn handle_create_poll(
     let mut method_str = String::new();
     let mut duration: Option<i64> = None;
     let mut allowed_roles: Option<Vec<String>> = None;
+    let mut allow_vote_sharing = false;
     // let mut anonymous = true;
 
     for option in options {
@@ -228,6 +236,11 @@ async fn handle_create_poll(
                     if !role_id.is_empty() {
                         allowed_roles = Some(vec![role_id]);
                     }
+                }
+            }
+            "share_vote" => {
+                if let Some(value) = option.value.as_ref() {
+                    allow_vote_sharing = value.as_bool().unwrap_or(false);
                 }
             }
             _ => {}
@@ -274,7 +287,10 @@ async fn handle_create_poll(
         voting_method.clone(),
         duration,
         allowed_roles,
+        allow_vote_sharing,
     );
+
+    poll.allow_vote_sharing = allow_vote_sharing;
 
     database.create_poll(&poll).await?;
 
