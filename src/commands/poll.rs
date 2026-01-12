@@ -1,16 +1,18 @@
 use crate::db::Database;
 use crate::models::{Poll, VotingMethod};
 use chrono::Utc;
-use serenity::builder::{CreateActionRow, CreateEmbed};
+use log::{error, info, warn};
 use serenity::builder::CreateApplicationCommand;
+use serenity::builder::{CreateActionRow, CreateEmbed};
 use serenity::model::application::component::ButtonStyle;
-use serenity::model::application::interaction::application_command::ApplicationCommandInteraction;
 use serenity::model::application::interaction::InteractionResponseType;
+use serenity::model::application::interaction::application_command::ApplicationCommandInteraction;
 use serenity::model::id::{ChannelId, MessageId};
 use serenity::prelude::*;
-use log::{info, warn, error};
 
-pub fn create_poll_command(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
+pub fn create_poll_command(
+    command: &mut CreateApplicationCommand,
+) -> &mut CreateApplicationCommand {
     command
         .name("poll")
         .description("Create and manage polls")
@@ -47,7 +49,9 @@ pub fn create_poll_command(command: &mut CreateApplicationCommand) -> &mut Creat
                 .create_sub_option(|sub_option| {
                     sub_option
                         .name("duration")
-                        .description("Duration in minutes (default: 1440 = 24 hours, 0 for manual close)")
+                        .description(
+                            "Duration in minutes (default: 1440 = 24 hours, 0 for manual close)",
+                        )
                         .kind(serenity::model::application::command::CommandOptionType::Integer)
                         .required(false)
                 })
@@ -58,13 +62,20 @@ pub fn create_poll_command(command: &mut CreateApplicationCommand) -> &mut Creat
                         .kind(serenity::model::application::command::CommandOptionType::Role)
                         .required(false)
                 })
-                // .create_sub_option(|sub_option| {
-                //     sub_option
-                //         .name("anonymous")
-                //         .description("Whether votes should be anonymous (default: true)")
-                //         .kind(serenity::model::application::command::CommandOptionType::Boolean)
-                //         .required(false)
-                // })
+                .create_sub_option(|sub_option| {
+                    sub_option
+                        .name("share_vote")
+                        .description("Allow voters to share their vote after voting (optional)")
+                        .kind(serenity::model::application::command::CommandOptionType::Boolean)
+                        .required(false)
+                })
+            // .create_sub_option(|sub_option| {
+            //     sub_option
+            //         .name("anonymous")
+            //         .description("Whether votes should be anonymous (default: true)")
+            //         .kind(serenity::model::application::command::CommandOptionType::Boolean)
+            //         .required(false)
+            // })
         })
         .create_option(|option| {
             option
@@ -200,6 +211,7 @@ async fn handle_create_poll(
     let mut method_str = String::new();
     let mut duration: Option<i64> = None;
     let mut allowed_roles: Option<Vec<String>> = None;
+    let mut allow_vote_sharing = false;
     // let mut anonymous = true;
 
     for option in options {
@@ -224,6 +236,11 @@ async fn handle_create_poll(
                     if !role_id.is_empty() {
                         allowed_roles = Some(vec![role_id]);
                     }
+                }
+            }
+            "share_vote" => {
+                if let Some(value) = option.value.as_ref() {
+                    allow_vote_sharing = value.as_bool().unwrap_or(false);
                 }
             }
             _ => {}
@@ -270,7 +287,10 @@ async fn handle_create_poll(
         voting_method.clone(),
         duration,
         allowed_roles,
+        allow_vote_sharing,
     );
+
+    poll.allow_vote_sharing = allow_vote_sharing;
 
     database.create_poll(&poll).await?;
 
@@ -293,7 +313,10 @@ async fn handle_create_poll(
             Ok(message) => {
                 let message_id_str = message.id.to_string();
                 poll.message_id = Some(message_id_str.clone());
-                if let Err(e) = database.update_poll_message_id(&poll.id, &message_id_str).await {
+                if let Err(e) = database
+                    .update_poll_message_id(&poll.id, &message_id_str)
+                    .await
+                {
                     error!("Failed to update message ID for poll {}: {}", poll.id, e);
                 } else {
                     info!("Stored message ID {} for poll {}", message_id_str, poll.id);
@@ -335,41 +358,47 @@ async fn handle_poll_results(
         None => {
             // No ID provided, show selection menu
             let guild_id = command.guild_id.ok_or("Missing guild ID")?.to_string();
-            let ended_polls = database.get_recently_ended_polls_by_guild(&guild_id, 25).await?;
+            let ended_polls = database
+                .get_recently_ended_polls_by_guild(&guild_id, 25)
+                .await?;
 
             if ended_polls.is_empty() {
                 send_error_response(ctx, command, "No recently ended polls found.").await?;
                 return Ok(());
             }
 
-            command.create_interaction_response(&ctx.http, |response| {
-                response
-                    .kind(InteractionResponseType::ChannelMessageWithSource)
-                    .interaction_response_data(|message| {
-                        message
-                            .ephemeral(true)
-                            .content("Select a poll to view results:")
-                            .components(|c| {
-                                c.create_action_row(|row| {
-                                    row.create_select_menu(|menu| {
-                                        menu.custom_id("selectResultsPoll")
-                                            .placeholder("Choose a poll...")
-                                            .options(|opts| {
-                                                for poll in ended_polls.iter() {
-                                                    let label = if poll.question.len() > 90 {
-                                                        format!("{}...", &poll.question[..87])
-                                                    } else {
-                                                        poll.question.clone()
-                                                    };
-                                                    opts.create_option(|o| o.label(label).value(&poll.id));
-                                                }
-                                                opts
-                                            })
+            command
+                .create_interaction_response(&ctx.http, |response| {
+                    response
+                        .kind(InteractionResponseType::ChannelMessageWithSource)
+                        .interaction_response_data(|message| {
+                            message
+                                .ephemeral(true)
+                                .content("Select a poll to view results:")
+                                .components(|c| {
+                                    c.create_action_row(|row| {
+                                        row.create_select_menu(|menu| {
+                                            menu.custom_id("selectResultsPoll")
+                                                .placeholder("Choose a poll...")
+                                                .options(|opts| {
+                                                    for poll in ended_polls.iter() {
+                                                        let label = if poll.question.len() > 90 {
+                                                            format!("{}...", &poll.question[..87])
+                                                        } else {
+                                                            poll.question.clone()
+                                                        };
+                                                        opts.create_option(|o| {
+                                                            o.label(label).value(&poll.id)
+                                                        });
+                                                    }
+                                                    opts
+                                                })
+                                        })
                                     })
                                 })
-                            })
-                    })
-            }).await?;
+                        })
+                })
+                .await?;
             return Ok(());
         }
     };
@@ -387,8 +416,11 @@ async fn handle_poll_results(
             Some(time) => format!("<t:{}:R>", time.timestamp()),
             None => "manually ended".to_string(),
         };
-        
-        let msg = format!("Poll is still active. Wait until {} or use `/poll end {}` to end the polling early.", ends_at_msg, poll_id);
+
+        let msg = format!(
+            "Poll is still active. Wait until {} or use `/poll end {}` to end the polling early.",
+            ends_at_msg, poll_id
+        );
         send_error_response(ctx, command, &msg).await?;
         return Ok(());
     }
@@ -408,8 +440,8 @@ async fn handle_poll_results(
                             c.create_action_row(|row| {
                                 row.create_button(|btn| {
                                     btn.custom_id(format!("shareResults_{}", poll.id))
-                                       .label("Share Results")
-                                       .style(ButtonStyle::Primary)
+                                        .label("Share Results")
+                                        .style(ButtonStyle::Primary)
                                 })
                             })
                         })
@@ -453,11 +485,16 @@ fn create_poll_embed<'a>(embed: &'a mut CreateEmbed, poll: &Poll) -> &'a mut Cre
         }
     }
 
-    embed.footer(|f| f.text("Click the buttons below to vote!")).timestamp(poll.created_at.to_rfc3339())
+    embed
+        .footer(|f| f.text("Click the buttons below to vote!"))
+        .timestamp(poll.created_at.to_rfc3339())
 }
 
 // Using camelCase format for consistency
-fn create_poll_components<'a>(row: &'a mut CreateActionRow, poll: &Poll) -> &'a mut CreateActionRow {
+fn create_poll_components<'a>(
+    row: &'a mut CreateActionRow,
+    poll: &Poll,
+) -> &'a mut CreateActionRow {
     if !poll.is_active {
         return row;
     }
@@ -579,34 +616,38 @@ async fn handle_end_poll(
                 return Ok(());
             }
 
-            command.create_interaction_response(&ctx.http, |response| {
-                response
-                    .kind(InteractionResponseType::ChannelMessageWithSource)
-                    .interaction_response_data(|message| {
-                        message
-                            .ephemeral(true)
-                            .content("Select a poll to end:")
-                            .components(|c| {
-                                c.create_action_row(|row| {
-                                    row.create_select_menu(|menu| {
-                                        menu.custom_id("selectEndPoll")
-                                            .placeholder("Choose a poll...")
-                                            .options(|opts| {
-                                                for poll in active_polls.iter().take(25) {
-                                                    let label = if poll.question.len() > 90 {
-                                                        format!("{}...", &poll.question[..87])
-                                                    } else {
-                                                        poll.question.clone()
-                                                    };
-                                                    opts.create_option(|o| o.label(label).value(&poll.id));
-                                                }
-                                                opts
-                                            })
+            command
+                .create_interaction_response(&ctx.http, |response| {
+                    response
+                        .kind(InteractionResponseType::ChannelMessageWithSource)
+                        .interaction_response_data(|message| {
+                            message
+                                .ephemeral(true)
+                                .content("Select a poll to end:")
+                                .components(|c| {
+                                    c.create_action_row(|row| {
+                                        row.create_select_menu(|menu| {
+                                            menu.custom_id("selectEndPoll")
+                                                .placeholder("Choose a poll...")
+                                                .options(|opts| {
+                                                    for poll in active_polls.iter().take(25) {
+                                                        let label = if poll.question.len() > 90 {
+                                                            format!("{}...", &poll.question[..87])
+                                                        } else {
+                                                            poll.question.clone()
+                                                        };
+                                                        opts.create_option(|o| {
+                                                            o.label(label).value(&poll.id)
+                                                        });
+                                                    }
+                                                    opts
+                                                })
+                                        })
                                     })
                                 })
-                            })
-                    })
-            }).await?;
+                        })
+                })
+                .await?;
             return Ok(());
         }
     };
@@ -622,10 +663,13 @@ async fn handle_end_poll(
     if !poll.is_active {
         let votes = database.get_poll_votes(&poll_id).await?;
         let results = calculate_poll_results(&poll, &votes);
-        
+
         let msg = if let Some(ends_at) = poll.ends_at {
             if ends_at < Utc::now() {
-                format!("This poll has already ended at <t:{}:f>, here are the results:", ends_at.timestamp())
+                format!(
+                    "This poll has already ended at <t:{}:f>, here are the results:",
+                    ends_at.timestamp()
+                )
             } else {
                 "This poll has already ended, here are the results:".to_string()
             }
@@ -685,7 +729,9 @@ async fn handle_list_polls(
     let guild_id = command.guild_id.ok_or("Missing guild ID")?.to_string();
 
     let active_polls = database.get_active_polls_by_guild(&guild_id).await?;
-    let recent_polls = database.get_recently_ended_polls_by_guild(&guild_id, 5).await?;
+    let recent_polls = database
+        .get_recently_ended_polls_by_guild(&guild_id, 5)
+        .await?;
 
     command
         .create_interaction_response(&ctx.http, |response| {
@@ -700,10 +746,9 @@ async fn handle_list_polls(
                             let active_list = active_polls
                                 .iter()
                                 .map(|p| {
-                                    let ends = p.ends_at.map_or(
-                                        "Manual".to_string(),
-                                        |t| format!("<t:{}:R>", t.timestamp()),
-                                    );
+                                    let ends = p.ends_at.map_or("Manual".to_string(), |t| {
+                                        format!("<t:{}:R>", t.timestamp())
+                                    });
                                     format!("`{}`: {} (Ends: {})", p.id, p.question, ends)
                                 })
                                 .collect::<Vec<_>>()
@@ -717,17 +762,20 @@ async fn handle_list_polls(
                             let recent_list = recent_polls
                                 .iter()
                                 .map(|p| {
-                                    let ended = p.ends_at.map_or(
-                                        "N/A".to_string(),
-                                        |t| format!("<t:{}:R>", t.timestamp()),
-                                    );
+                                    let ended = p.ends_at.map_or("N/A".to_string(), |t| {
+                                        format!("<t:{}:R>", t.timestamp())
+                                    });
                                     format!("`{}`: {} (Ended: {})", p.id, p.question, ended)
                                 })
                                 .collect::<Vec<_>>()
                                 .join("\n");
                             e.field("Recently Ended Polls (Max 5)", recent_list, false);
                         } else {
-                            e.field("Recently Ended Polls", "No recently ended polls found.", false);
+                            e.field(
+                                "Recently Ended Polls",
+                                "No recently ended polls found.",
+                                false,
+                            );
                         }
 
                         e
@@ -745,9 +793,15 @@ pub fn calculate_poll_results(
 ) -> crate::voting::PollResults {
     match poll.voting_method {
         crate::models::VotingMethod::Star => crate::voting::star::calculate_results(poll, votes),
-        crate::models::VotingMethod::Plurality => crate::voting::plurality::calculate_results(poll, votes),
-        crate::models::VotingMethod::Ranked => crate::voting::ranked::calculate_results(poll, votes),
-        crate::models::VotingMethod::Approval => crate::voting::approval::calculate_results(poll, votes),
+        crate::models::VotingMethod::Plurality => {
+            crate::voting::plurality::calculate_results(poll, votes)
+        }
+        crate::models::VotingMethod::Ranked => {
+            crate::voting::ranked::calculate_results(poll, votes)
+        }
+        crate::models::VotingMethod::Approval => {
+            crate::voting::approval::calculate_results(poll, votes)
+        }
     }
 }
 
@@ -802,29 +856,36 @@ async fn handle_export_poll(
     };
 
     if poll.is_active {
-        send_error_response(ctx, command, "Cannot export data for an active poll. End the poll first with `/poll end`.").await?;
+        send_error_response(
+            ctx,
+            command,
+            "Cannot export data for an active poll. End the poll first with `/poll end`.",
+        )
+        .await?;
         return Ok(());
     }
 
     let votes = database.get_poll_votes(&poll_id).await?;
-    
+
     // Generate CSV content
     let mut csv_content = String::new();
     csv_content.push_str("User ID,Option ID,Option Text,Rating,Timestamp\n");
-    
+
     for vote in &votes {
-        let option_text = poll.options.iter()
+        let option_text = poll
+            .options
+            .iter()
             .find(|opt| opt.id == vote.option_id)
             .map(|opt| opt.text.clone())
             .unwrap_or_else(|| "Unknown Option".to_string());
-        
+
         // Escape CSV values that contain commas or quotes
         let escaped_text = if option_text.contains(',') || option_text.contains('"') {
             format!("\"{}\"", option_text.replace('"', "\"\""))
         } else {
             option_text
         };
-        
+
         csv_content.push_str(&format!(
             "{},{},{},{},{}\n",
             vote.user_id,
@@ -841,17 +902,19 @@ async fn handle_export_poll(
             response
                 .kind(InteractionResponseType::ChannelMessageWithSource)
                 .interaction_response_data(|message| {
-                    message
-                        .ephemeral(true)
-                        .content(format!("**Exported {} votes from poll: \"{}\"**\n\n```csv\n{}\n```", 
-                            votes.len(), 
-                            poll.question,
-                            if csv_content.len() > 1800 { 
-                                format!("{}...\n(CSV truncated - too many votes to display)", &csv_content[..1800])
-                            } else { 
-                                csv_content 
-                            }
-                        ))
+                    message.ephemeral(true).content(format!(
+                        "**Exported {} votes from poll: \"{}\"**\n\n```csv\n{}\n```",
+                        votes.len(),
+                        poll.question,
+                        if csv_content.len() > 1800 {
+                            format!(
+                                "{}...\n(CSV truncated - too many votes to display)",
+                                &csv_content[..1800]
+                            )
+                        } else {
+                            csv_content
+                        }
+                    ))
                 })
         })
         .await?;
@@ -868,11 +931,11 @@ async fn send_error_response(
         .create_interaction_response(&ctx.http, |response| {
             response
                 .kind(InteractionResponseType::ChannelMessageWithSource)
-                .interaction_response_data(|message| 
+                .interaction_response_data(|message| {
                     message
                         .content(format!("Error: {}", error_message))
                         .ephemeral(true)
-                )
+                })
         })
         .await
 }

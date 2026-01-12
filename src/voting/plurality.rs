@@ -7,13 +7,13 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
     let mut option_votes: HashMap<String, i32> = HashMap::new();
     let mut option_text: HashMap<String, String> = HashMap::new();
     let mut voters = std::collections::HashSet::new();
-    
+
     // Initialize counts to 0
     for option in &poll.options {
         option_votes.insert(option.id.clone(), 0);
         option_text.insert(option.id.clone(), option.text.clone());
     }
-    
+
     // Count votes (in plurality, a vote is a rating of 1)
     for vote in votes {
         if vote.rating == 1 {
@@ -23,7 +23,7 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
             voters.insert(vote.user_id.clone());
         }
     }
-    
+
     // Build vote counts
     let mut vote_counts: Vec<VoteCount> = option_votes
         .iter()
@@ -36,39 +36,43 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
             }
         })
         .collect();
-    
+
     // Sort by score (highest first)
-    vote_counts.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-    
+    vote_counts.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
     // Assign ranks
     for (i, count) in vote_counts.iter_mut().enumerate() {
         count.rank = i + 1;
     }
-    
+
     // Determine winner
     if !vote_counts.is_empty() && vote_counts[0].score > 0.0 {
         let winner_id = vote_counts[0].option_id.clone();
         let winner_text = vote_counts[0].option_text.clone();
         let winner_votes = vote_counts[0].score as i32;
-        
+
         // Build summary text
         let mut summary = String::new();
-        
+
         for count in &vote_counts {
             let percentage = if !voters.is_empty() {
                 (count.score as f64 / voters.len() as f64) * 100.0
             } else {
                 0.0
             };
-            
+
             summary.push_str(&format!(
                 "{}: {} votes ({:.1}%)\n",
                 count.option_text, count.score, percentage
             ));
         }
-        
+
         summary.push_str(&format!("\nTotal voters: {}", voters.len()));
-        
+
         PollResults {
             winner: format!("{} ({} votes)", winner_text, winner_votes),
             summary,

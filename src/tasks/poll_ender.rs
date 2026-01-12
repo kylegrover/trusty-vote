@@ -1,10 +1,10 @@
-use crate::db::Database;
 use crate::commands::poll::end_poll_logic; // Import the refactored logic
+use crate::db::Database;
+use chrono::Utc;
+use log::{error, info};
 use serenity::prelude::*;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
-use chrono::Utc;
-use log::{info, error};
 use tokio::time::interval;
 
 const CHECK_INTERVAL_SECONDS: u64 = 60; // Check every 60 seconds
@@ -33,9 +33,21 @@ pub async fn check_expired_polls_task(database: Arc<Database>, ctx: Context) {
 
                         // Spawn a separate task for each poll to avoid blocking the loop
                         tokio::spawn(async move {
-                            match end_poll_logic(&db_clone, &ctx_clone, &poll_id_clone, &channel_id_clone, message_id_clone).await {
-                                Ok(_) => info!("Successfully processed expired poll {}", poll_id_clone),
-                                Err(e) => error!("Error processing expired poll {}: {}", poll_id_clone, e),
+                            match end_poll_logic(
+                                &db_clone,
+                                &ctx_clone,
+                                &poll_id_clone,
+                                &channel_id_clone,
+                                message_id_clone,
+                            )
+                            .await
+                            {
+                                Ok(_) => {
+                                    info!("Successfully processed expired poll {}", poll_id_clone)
+                                }
+                                Err(e) => {
+                                    error!("Error processing expired poll {}: {}", poll_id_clone, e)
+                                }
                             }
                         });
                     }

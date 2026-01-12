@@ -15,8 +15,9 @@ pub struct Poll {
     pub created_at: DateTime<Utc>,
     pub ends_at: Option<DateTime<Utc>>,
     pub is_active: bool,
-    pub message_id: Option<String>, // Added message_id
+    pub message_id: Option<String>,         // Added message_id
     pub allowed_roles: Option<Vec<String>>, // Restrict voting to these role IDs (if set)
+    pub allow_vote_sharing: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +64,7 @@ impl Poll {
         voting_method: VotingMethod,
         duration_minutes: Option<i64>,
         allowed_roles: Option<Vec<String>>,
+        allow_vote_sharing: bool,
     ) -> Self {
         let options = options_text
             .into_iter()
@@ -73,7 +75,7 @@ impl Poll {
             .collect();
 
         let created_at = Utc::now();
-        
+
         // Calculate end time if duration is provided
         let ends_at = match duration_minutes {
             Some(0) => None, // 0 means manual ending
@@ -94,6 +96,7 @@ impl Poll {
             is_active: true,
             message_id: None, // Initialize message_id as None
             allowed_roles,
+            allow_vote_sharing,
         }
     }
 }

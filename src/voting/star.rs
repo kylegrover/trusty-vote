@@ -45,7 +45,11 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         .collect();
 
     // Sort by score (highest first)
-    score_counts.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    score_counts.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Assign ranks based on score
     for (i, count) in score_counts.iter_mut().enumerate() {
@@ -64,8 +68,12 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
     // --- Runoff Phase ---
     if score_counts.len() < 2 {
         // Not enough options for a runoff
-        let winner_text = score_counts.first().map_or("No winner".to_string(), |c| c.option_text.clone());
-        let winner_id = score_counts.first().map_or("".to_string(), |c| c.option_id.clone());
+        let winner_text = score_counts
+            .first()
+            .map_or("No winner".to_string(), |c| c.option_text.clone());
+        let winner_id = score_counts
+            .first()
+            .map_or("".to_string(), |c| c.option_id.clone());
         summary.push_str("Not enough options for a runoff.");
         return PollResults {
             winner: winner_text,
@@ -112,22 +120,31 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         candidate2_text, runoff_votes2
     ));
     if ties > 0 {
-         summary.push_str(&format!("• Tied preference: {} voters\n", ties));
+        summary.push_str(&format!("• Tied preference: {} voters\n", ties));
     }
     summary.push('\n');
 
-
     let (winner_id, winner_text, winner_score) = if runoff_votes1 >= runoff_votes2 {
-        (candidate1_id.clone(), candidate1_text.clone(), runoff_votes1)
+        (
+            candidate1_id.clone(),
+            candidate1_text.clone(),
+            runoff_votes1,
+        )
     } else {
-        (candidate2_id.clone(), candidate2_text.clone(), runoff_votes2)
+        (
+            candidate2_id.clone(),
+            candidate2_text.clone(),
+            runoff_votes2,
+        )
     };
 
     summary.push_str(&format!("Total voters: {}", voters.len()));
 
-
     PollResults {
-        winner: format!("{} ({} preferred votes in runoff)", winner_text, winner_score),
+        winner: format!(
+            "{} ({} preferred votes in runoff)",
+            winner_text, winner_score
+        ),
         summary,
         winner_id,
         raw_results: score_counts, // Return the scoring phase results as raw

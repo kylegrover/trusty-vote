@@ -1,9 +1,9 @@
-use sqlx::{Row, PgPool, postgres::{PgPoolOptions}};
-use chrono::{DateTime, Utc};
-use std::env;
 use crate::models::{Poll, VotingMethod};
+use chrono::{DateTime, Utc};
 #[cfg(feature = "embedded-postgres")]
-use postgresql_embedded::{PostgreSQL};
+use postgresql_embedded::PostgreSQL;
+use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use std::env;
 
 pub struct Database {
     pool: PgPool,
@@ -20,18 +20,20 @@ impl Database {
                 #[cfg(feature = "embedded-postgres")]
                 {
                     let mut pg = PostgreSQL::default();
-                    pg.setup().await.map_err(|e| format!("Failed to setup embedded Postgres: {e}"))?;
-                    pg.start().await.map_err(|e| format!("Failed to start embedded Postgres: {e}"))?;
+                    pg.setup()
+                        .await
+                        .map_err(|e| format!("Failed to setup embedded Postgres: {e}"))?;
+                    pg.start()
+                        .await
+                        .map_err(|e| format!("Failed to start embedded Postgres: {e}"))?;
                     let db_name = "trusty_vote_dev";
-                    pg.create_database(db_name).await.map_err(|e| format!("Failed to create database: {e}"))?;
+                    pg.create_database(db_name)
+                        .await
+                        .map_err(|e| format!("Failed to create database: {e}"))?;
                     let settings = pg.settings();
                     let url = format!(
                         "postgres://{}:{}@{}:{}/{}",
-                        settings.username,
-                        settings.password,
-                        settings.host, 
-                        settings.port,
-                        db_name
+                        settings.username, settings.password, settings.host, settings.port, db_name
                     );
                     println!("Using connection URL: {}", url);
                     let pool = PgPoolOptions::new()
@@ -39,11 +41,16 @@ impl Database {
                         .connect(&url)
                         .await?;
                     Self::init_schema(&pool).await?;
-                    return Ok(Self { pool, _embedded: Some(pg) });
+                    return Ok(Self {
+                        pool,
+                        _embedded: Some(pg),
+                    });
                 }
                 #[cfg(not(feature = "embedded-postgres"))]
                 {
-                    panic!("DATABASE_URL must be set in production or run with the 'embedded-postgres' feature for local development.");
+                    panic!(
+                        "DATABASE_URL must be set in production or run with the 'embedded-postgres' feature for local development."
+                    );
                 }
             }
         };
@@ -58,12 +65,12 @@ impl Database {
             _embedded: None,
         })
     }
-    
+
     // Get a reference to the connection pool
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
-    
+
     // Initialize the database schema
     async fn init_schema(pool: &PgPool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         sqlx::query(
@@ -79,8 +86,18 @@ impl Database {
                 ends_at TIMESTAMPTZ,
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 message_id TEXT,
-                allowed_roles TEXT[]
+                allowed_roles TEXT[],
+                allow_vote_sharing BOOLEAN NOT NULL DEFAULT FALSE
             );
+            "#,
+        )
+        .execute(pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            ALTER TABLE polls
+            ADD COLUMN IF NOT EXISTS allow_vote_sharing BOOLEAN NOT NULL DEFAULT FALSE;
             "#,
         )
         .execute(pool)
@@ -116,7 +133,7 @@ impl Database {
 
         Ok(())
     }
-    
+
     // Create a new poll in the database
     pub async fn create_poll(
         &self,
@@ -124,8 +141,8 @@ impl Database {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         sqlx::query(
             r#"
-            INSERT INTO polls (id, guild_id, channel_id, creator_id, question, voting_method, created_at, ends_at, is_active, message_id, allowed_roles)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10)
+            INSERT INTO polls (id, guild_id, channel_id, creator_id, question, voting_method, created_at, ends_at, is_active, message_id, allowed_roles, allow_vote_sharing)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11)
             "#,
         )
         .bind(&poll.id)
@@ -142,7 +159,8 @@ impl Database {
         .bind(poll.created_at)
         .bind(poll.ends_at)
         .bind(poll.is_active)
-        .bind(&poll.allowed_roles)
+            .bind(&poll.allowed_roles)
+            .bind(poll.allow_vote_sharing)
         .execute(&self.pool)
         .await?;
 
@@ -184,7 +202,7 @@ impl Database {
         .await?;
         Ok(())
     }
-    
+
     // Get a poll by ID
     pub async fn get_poll(
         &self,
@@ -193,7 +211,7 @@ impl Database {
         // Get the poll
         let poll_row = sqlx::query(
             r#"
-            SELECT id, guild_id, channel_id, creator_id, question, voting_method, created_at, ends_at, is_active, message_id, allowed_roles 
+            SELECT id, guild_id, channel_id, creator_id, question, voting_method, created_at, ends_at, is_active, message_id, allowed_roles, allow_vote_sharing 
             FROM polls 
             WHERE id = $1
             "#,
@@ -201,7 +219,7 @@ impl Database {
         .bind(poll_id)
         .fetch_one(&self.pool)
         .await?;
-        
+
         // Extract poll data
         let id = poll_row.get::<String, _>("id");
         let guild_id = poll_row.get::<String, _>("guild_id");
@@ -213,7 +231,8 @@ impl Database {
         let ends_at: Option<DateTime<Utc>> = poll_row.try_get("ends_at").ok();
         let is_active = poll_row.get::<bool, _>("is_active");
         let message_id: Option<String> = poll_row.get("message_id");
-        
+        let allow_vote_sharing = poll_row.get::<bool, _>("allow_vote_sharing");
+
         // Parse voting method
         let voting_method = match voting_method_str.as_str() {
             "star" => crate::models::VotingMethod::Star,
@@ -222,7 +241,7 @@ impl Database {
             "approval" => crate::models::VotingMethod::Approval,
             _ => return Err(format!("Unknown voting method: {}", voting_method_str).into()),
         };
-        
+
         // Get options
         let options = sqlx::query(
             r#"
@@ -241,7 +260,7 @@ impl Database {
             text: row.get::<String, _>("text"),
         })
         .collect();
-        
+
         // Create poll object
         let poll = crate::models::Poll {
             id,
@@ -255,12 +274,15 @@ impl Database {
             ends_at,
             is_active,
             message_id,
-            allowed_roles: poll_row.try_get::<Option<Vec<String>>, _>("allowed_roles").unwrap_or(None),
+            allowed_roles: poll_row
+                .try_get::<Option<Vec<String>>, _>("allowed_roles")
+                .unwrap_or(None),
+            allow_vote_sharing,
         };
-        
+
         Ok(poll)
     }
-    
+
     // End a poll (set is_active = false)
     pub async fn end_poll(
         &self,
@@ -283,7 +305,8 @@ impl Database {
     pub async fn get_expired_polls(
         &self,
         now: DateTime<Utc>,
-    ) -> Result<Vec<(String, String, Option<String>)>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Vec<(String, String, Option<String>)>, Box<dyn std::error::Error + Send + Sync>>
+    {
         let polls = sqlx::query(
             r#"
             SELECT id, channel_id, message_id
@@ -323,11 +346,15 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
 
-        let partial_polls = rows.into_iter().map(|row| {
-            Poll {
+        let partial_polls = rows
+            .into_iter()
+            .map(|row| Poll {
                 id: row.get("id"),
                 question: row.get("question"),
-                ends_at: row.try_get::<Option<DateTime<Utc>>, _>("ends_at").ok().flatten(),
+                ends_at: row
+                    .try_get::<Option<DateTime<Utc>>, _>("ends_at")
+                    .ok()
+                    .flatten(),
                 guild_id: guild_id.to_string(),
                 channel_id: String::new(),
                 creator_id: String::new(),
@@ -337,8 +364,9 @@ impl Database {
                 is_active: true,
                 message_id: None,
                 allowed_roles: None,
-            }
-        }).collect();
+                allow_vote_sharing: false,
+            })
+            .collect();
 
         Ok(partial_polls)
     }
@@ -363,11 +391,15 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
 
-        let partial_polls = rows.into_iter().map(|row| {
-            Poll {
+        let partial_polls = rows
+            .into_iter()
+            .map(|row| Poll {
                 id: row.get("id"),
                 question: row.get("question"),
-                ends_at: row.try_get::<Option<DateTime<Utc>>, _>("ends_at").ok().flatten(),
+                ends_at: row
+                    .try_get::<Option<DateTime<Utc>>, _>("ends_at")
+                    .ok()
+                    .flatten(),
                 guild_id: guild_id.to_string(),
                 channel_id: String::new(),
                 creator_id: String::new(),
@@ -377,8 +409,9 @@ impl Database {
                 is_active: false,
                 message_id: None,
                 allowed_roles: None,
-            }
-        }).collect();
+                allow_vote_sharing: false,
+            })
+            .collect();
         Ok(partial_polls)
     }
 
@@ -454,12 +487,13 @@ impl Database {
             return Err("Poll not found".into());
         }
 
-        let option_exists = sqlx::query("SELECT 1 FROM poll_options WHERE id = $1 AND poll_id = $2")
-            .bind(&vote.option_id)
-            .bind(&vote.poll_id)
-            .fetch_optional(&self.pool)
-            .await?
-            .is_some();
+        let option_exists =
+            sqlx::query("SELECT 1 FROM poll_options WHERE id = $1 AND poll_id = $2")
+                .bind(&vote.option_id)
+                .bind(&vote.poll_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .is_some();
 
         if !option_exists {
             return Err("Poll option not found".into());

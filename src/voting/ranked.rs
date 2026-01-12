@@ -1,7 +1,7 @@
 use crate::models::{Poll, Vote};
 use crate::voting::{PollResults, VoteCount};
-use std::collections::{HashMap, HashSet};
 use log::error;
+use std::collections::{HashMap, HashSet};
 
 pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
     // Group votes by user, storing their ranking for each option
@@ -82,12 +82,16 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
                 option_id: option_id.clone(),
                 option_text: option_text.get(option_id).cloned().unwrap_or_default(),
                 score: *count as f64, // Score is the number of first preferences
-                rank: 0, // Will set after sorting
+                rank: 0,              // Will set after sorting
             })
             .collect();
 
         // Sort by score (highest first)
-        round_counts.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        round_counts.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Assign ranks for this round
         for (i, count) in round_counts.iter_mut().enumerate() {
@@ -118,10 +122,14 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
 
         // Check for ties or only one candidate left
         if round_counts.len() <= 1 {
-             let winner_text = round_counts.first().map_or("No winner (tie or no remaining options)".to_string(), |c| c.option_text.clone());
-             summary.push_str(&format!("{} wins (last remaining).", winner_text));
-             final_results = round_counts; // Store this round's results
-             break; // End condition met
+            let winner_text = round_counts
+                .first()
+                .map_or("No winner (tie or no remaining options)".to_string(), |c| {
+                    c.option_text.clone()
+                });
+            summary.push_str(&format!("{} wins (last remaining).", winner_text));
+            final_results = round_counts; // Store this round's results
+            break; // End condition met
         }
 
         // Check for unbreakable tie among all remaining candidates
@@ -134,25 +142,33 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
 
         // Eliminate the lowest-ranked candidate(s) with the minimum score
         let mut eliminated_this_round_text = Vec::new();
-        let candidates_to_eliminate: Vec<String> = round_counts.iter()
+        let candidates_to_eliminate: Vec<String> = round_counts
+            .iter()
             .filter(|c| c.score == min_score)
             .map(|c| c.option_id.clone())
             .collect();
 
         for option_id in candidates_to_eliminate {
-             if let Some(text) = option_text.get(&option_id) {
-                 eliminated_this_round_text.push(text.clone());
-             }
-             eliminated.insert(option_id);
+            if let Some(text) = option_text.get(&option_id) {
+                eliminated_this_round_text.push(text.clone());
+            }
+            eliminated.insert(option_id);
         }
 
-        summary.push_str(&format!("Eliminating: {}\n\n", eliminated_this_round_text.join(", ")));
+        summary.push_str(&format!(
+            "Eliminating: {}\n\n",
+            eliminated_this_round_text.join(", ")
+        ));
 
         round += 1;
 
         // Safety break to prevent infinite loops in unexpected scenarios
-        if round > poll.options.len() + 5 { // Allow a few extra rounds just in case
-            error!("Ranked choice calculation exceeded expected rounds for poll {}", poll.id);
+        if round > poll.options.len() + 5 {
+            // Allow a few extra rounds just in case
+            error!(
+                "Ranked choice calculation exceeded expected rounds for poll {}",
+                poll.id
+            );
             summary.push_str("Calculation stopped due to excessive rounds.");
             final_results = round_counts; // Store current state
             break;
@@ -161,20 +177,28 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
 
     // Determine final winner text
     let winner_text = if !final_results.is_empty() && final_results[0].score >= majority_threshold {
-        format!("{} ({:.0} votes)", final_results[0].option_text, final_results[0].score)
+        format!(
+            "{} ({:.0} votes)",
+            final_results[0].option_text, final_results[0].score
+        )
     } else if final_results.len() == 1 {
-         format!("{} (last remaining)", final_results[0].option_text)
-    } else if !final_results.is_empty() && final_results.iter().all(|c| c.score == final_results[0].score) {
+        format!("{} (last remaining)", final_results[0].option_text)
+    } else if !final_results.is_empty()
+        && final_results
+            .iter()
+            .all(|c| c.score == final_results[0].score)
+    {
         "Tie".to_string() // Indicate a tie if multiple winners have same score
     } else if !final_results.is_empty() {
-         // If no majority but someone has highest score (e.g. due to exhaustion)
-         format!("{} (most votes)", final_results[0].option_text)
-    }
-    else {
+        // If no majority but someone has highest score (e.g. due to exhaustion)
+        format!("{} (most votes)", final_results[0].option_text)
+    } else {
         "No clear winner".to_string()
     };
 
-    let winner_id = final_results.first().map_or("".to_string(), |c| c.option_id.clone());
+    let winner_id = final_results
+        .first()
+        .map_or("".to_string(), |c| c.option_id.clone());
 
     PollResults {
         winner: winner_text,
