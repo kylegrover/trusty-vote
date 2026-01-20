@@ -660,6 +660,26 @@ async fn handle_end_poll(
         }
     };
 
+    // Verify user is poll creator or server admin
+    let user_id = command.user.id.to_string();
+    let is_creator = poll.creator_id == user_id;
+    let is_admin = command
+        .member
+        .as_ref()
+        .and_then(|m| m.permissions)
+        .map(|p| p.administrator())
+        .unwrap_or(false);
+
+    if !is_creator && !is_admin {
+        send_error_response(
+            ctx,
+            command,
+            "Only the poll creator or server admins can end this poll.",
+        )
+        .await?;
+        return Ok(());
+    }
+
     if !poll.is_active {
         let votes = database.get_poll_votes(&poll_id).await?;
         let results = calculate_poll_results(&poll, &votes);
@@ -854,6 +874,26 @@ async fn handle_export_poll(
             return Ok(());
         }
     };
+
+    // Verify user is poll creator or server admin
+    let user_id = command.user.id.to_string();
+    let is_creator = poll.creator_id == user_id;
+    let is_admin = command
+        .member
+        .as_ref()
+        .and_then(|m| m.permissions)
+        .map(|p| p.administrator())
+        .unwrap_or(false);
+
+    if !is_creator && !is_admin {
+        send_error_response(
+            ctx,
+            command,
+            "Only the poll creator or server admins can export poll data.",
+        )
+        .await?;
+        return Ok(());
+    }
 
     if poll.is_active {
         send_error_response(

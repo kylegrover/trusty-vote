@@ -954,26 +954,21 @@ pub async fn handle_rank_action(
         _ => {}
     }
 
-    for opt in &poll.options {
-        let v = crate::models::Vote {
+    // Build all votes and save in a single transaction (batch operation)
+    let now = Utc::now();
+    let all_votes: Vec<crate::models::Vote> = poll
+        .options
+        .iter()
+        .map(|opt| crate::models::Vote {
             user_id: user_id.clone(),
             poll_id: poll.id.clone(),
             option_id: opt.id.clone(),
-            rating: 0,
-            timestamp: Utc::now(),
-        };
-        database.save_vote(&v).await?;
-    }
-    for (option_id, rank) in &rankings {
-        let v = crate::models::Vote {
-            user_id: user_id.clone(),
-            poll_id: poll.id.clone(),
-            option_id: option_id.clone(),
-            rating: *rank,
-            timestamp: Utc::now(),
-        };
-        database.save_vote(&v).await?;
-    }
+            rating: rankings.get(&opt.id).copied().unwrap_or(0),
+            timestamp: now,
+        })
+        .collect();
+
+    database.save_votes_batch(&all_votes).await?;
 
     handle_vote_button(database, ctx, component, poll).await
 }

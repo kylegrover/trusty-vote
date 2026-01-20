@@ -1,4 +1,4 @@
-use crate::models::{Poll, VotingMethod};
+use crate::models::PollSummary;
 use chrono::{DateTime, Utc};
 #[cfg(feature = "embedded-postgres")]
 use postgresql_embedded::PostgreSQL;
@@ -329,11 +329,11 @@ impl Database {
         Ok(polls)
     }
 
-    // Get active polls for a specific guild
+    // Get active polls for a specific guild (lightweight summary only)
     pub async fn get_active_polls_by_guild(
         &self,
         guild_id: &str,
-    ) -> Result<Vec<Poll>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Vec<PollSummary>, Box<dyn std::error::Error + Send + Sync>> {
         let rows = sqlx::query(
             r#"
             SELECT id, question, ends_at
@@ -346,37 +346,28 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
 
-        let partial_polls = rows
+        let summaries = rows
             .into_iter()
-            .map(|row| Poll {
+            .map(|row| PollSummary {
                 id: row.get("id"),
                 question: row.get("question"),
                 ends_at: row
                     .try_get::<Option<DateTime<Utc>>, _>("ends_at")
                     .ok()
                     .flatten(),
-                guild_id: guild_id.to_string(),
-                channel_id: String::new(),
-                creator_id: String::new(),
-                options: Vec::new(),
-                voting_method: VotingMethod::Plurality,
-                created_at: Utc::now(),
                 is_active: true,
-                message_id: None,
-                allowed_roles: None,
-                allow_vote_sharing: false,
             })
             .collect();
 
-        Ok(partial_polls)
+        Ok(summaries)
     }
 
-    // Get recently ended polls for a specific guild
+    // Get recently ended polls for a specific guild (lightweight summary only)
     pub async fn get_recently_ended_polls_by_guild(
         &self,
         guild_id: &str,
         limit: u32,
-    ) -> Result<Vec<Poll>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Vec<PollSummary>, Box<dyn std::error::Error + Send + Sync>> {
         let rows = sqlx::query(
             r#"
             SELECT id, question, ends_at
@@ -391,28 +382,19 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
 
-        let partial_polls = rows
+        let summaries = rows
             .into_iter()
-            .map(|row| Poll {
+            .map(|row| PollSummary {
                 id: row.get("id"),
                 question: row.get("question"),
                 ends_at: row
                     .try_get::<Option<DateTime<Utc>>, _>("ends_at")
                     .ok()
                     .flatten(),
-                guild_id: guild_id.to_string(),
-                channel_id: String::new(),
-                creator_id: String::new(),
-                options: Vec::new(),
-                voting_method: VotingMethod::Plurality,
-                created_at: Utc::now(),
                 is_active: false,
-                message_id: None,
-                allowed_roles: None,
-                allow_vote_sharing: false,
             })
             .collect();
-        Ok(partial_polls)
+        Ok(summaries)
     }
 
     // Get votes for a poll
@@ -515,6 +497,40 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        Ok(())
+    }
+
+    /// Batch save multiple votes in a single transaction (more efficient for ranked voting)
+    pub async fn save_votes_batch(
+        &self,
+        votes: &[crate::models::Vote],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if votes.is_empty() {
+            return Ok(());
+        }
+
+        // Start a transaction for atomicity
+        let mut tx = self.pool.begin().await?;
+
+        for vote in votes {
+            sqlx::query(
+                r#"
+                INSERT INTO votes (user_id, poll_id, option_id, rating, timestamp)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (user_id, poll_id, option_id)
+                DO UPDATE SET rating = EXCLUDED.rating, timestamp = EXCLUDED.timestamp
+                "#,
+            )
+            .bind(&vote.user_id)
+            .bind(&vote.poll_id)
+            .bind(&vote.option_id)
+            .bind(vote.rating)
+            .bind(vote.timestamp)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 }

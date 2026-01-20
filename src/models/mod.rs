@@ -54,6 +54,15 @@ pub struct Vote {
     pub timestamp: DateTime<Utc>,
 }
 
+/// Lightweight poll summary for list views - avoids loading full poll data
+#[derive(Debug, Clone)]
+pub struct PollSummary {
+    pub id: String,
+    pub question: String,
+    pub ends_at: Option<DateTime<Utc>>,
+    pub is_active: bool,
+}
+
 impl Poll {
     pub fn new(
         guild_id: String,
