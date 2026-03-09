@@ -8,7 +8,9 @@ use serenity::model::application::component::ButtonStyle;
 use serenity::model::application::interaction::InteractionResponseType;
 use serenity::model::application::interaction::application_command::ApplicationCommandInteraction;
 use serenity::model::id::{ChannelId, MessageId};
+use serenity::model::prelude::AttachmentType;
 use serenity::prelude::*;
+use std::borrow::Cow;
 
 pub fn create_poll_command(
     command: &mut CreateApplicationCommand,
@@ -846,6 +848,73 @@ pub fn create_results_embed<'a>(
         .timestamp(Utc::now().to_rfc3339())
 }
 
+fn escape_csv_field(value: &str) -> String {
+    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r') {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
+fn build_poll_export_csv(poll: &Poll, votes: &[crate::models::Vote]) -> String {
+    let mut csv_content = String::new();
+    let ended_at = poll
+        .ends_at
+        .map(|timestamp| timestamp.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|| "manual".to_string());
+
+    csv_content.push_str("Poll ID,Question,Method,Created At,Ended At,User ID,Option ID,Option Text,Rating,Timestamp\n");
+
+    for vote in votes {
+        let option_text = poll
+            .options
+            .iter()
+            .find(|option| option.id == vote.option_id)
+            .map(|option| option.text.as_str())
+            .unwrap_or("Unknown Option");
+
+        csv_content.push_str(&format!(
+            "{},{},{},{},{},{},{},{},{},{}\n",
+            escape_csv_field(&poll.id),
+            escape_csv_field(&poll.question),
+            escape_csv_field(&poll.voting_method.to_string()),
+            escape_csv_field(&poll.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+            escape_csv_field(&ended_at),
+            escape_csv_field(&vote.user_id),
+            escape_csv_field(&vote.option_id),
+            escape_csv_field(option_text),
+            vote.rating,
+            escape_csv_field(&vote.timestamp.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        ));
+    }
+
+    csv_content
+}
+
+fn build_poll_export_filename(poll: &Poll) -> String {
+    let mut slug = poll
+        .question
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+
+    while slug.contains("__") {
+        slug = slug.replace("__", "_");
+    }
+
+    let slug = slug.trim_matches('_');
+    let slug = if slug.is_empty() { "poll" } else { slug };
+    let truncated_slug = slug.chars().take(40).collect::<String>();
+
+    format!("trusty_vote_{}_{}.csv", truncated_slug, poll.id)
+}
+
 // Export poll votes as CSV
 async fn handle_export_poll(
     database: &Database,
@@ -906,55 +975,25 @@ async fn handle_export_poll(
     }
 
     let votes = database.get_poll_votes(&poll_id).await?;
+    let csv_content = build_poll_export_csv(&poll, &votes);
+    let csv_filename = build_poll_export_filename(&poll);
 
-    // Generate CSV content
-    let mut csv_content = String::new();
-    csv_content.push_str("User ID,Option ID,Option Text,Rating,Timestamp\n");
-
-    for vote in &votes {
-        let option_text = poll
-            .options
-            .iter()
-            .find(|opt| opt.id == vote.option_id)
-            .map(|opt| opt.text.clone())
-            .unwrap_or_else(|| "Unknown Option".to_string());
-
-        // Escape CSV values that contain commas or quotes
-        let escaped_text = if option_text.contains(',') || option_text.contains('"') {
-            format!("\"{}\"", option_text.replace('"', "\"\""))
-        } else {
-            option_text
-        };
-
-        csv_content.push_str(&format!(
-            "{},{},{},{},{}\n",
-            vote.user_id,
-            vote.option_id,
-            escaped_text,
-            vote.rating,
-            vote.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
-        ));
-    }
-
-    // Send the CSV content as text since file attachments aren't supported in responses
     command
         .create_interaction_response(&ctx.http, |response| {
             response
                 .kind(InteractionResponseType::ChannelMessageWithSource)
                 .interaction_response_data(|message| {
-                    message.ephemeral(true).content(format!(
-                        "**Exported {} votes from poll: \"{}\"**\n\n```csv\n{}\n```",
-                        votes.len(),
-                        poll.question,
-                        if csv_content.len() > 1800 {
-                            format!(
-                                "{}...\n(CSV truncated - too many votes to display)",
-                                &csv_content[..1800]
-                            )
-                        } else {
-                            csv_content
-                        }
-                    ))
+                    message
+                        .ephemeral(true)
+                        .content(format!(
+                            "Exported {} vote record(s) for \"{}\".",
+                            votes.len(),
+                            poll.question
+                        ))
+                        .add_file(AttachmentType::Bytes {
+                            data: Cow::Owned(csv_content.into_bytes()),
+                            filename: csv_filename,
+                        })
                 })
         })
         .await?;
