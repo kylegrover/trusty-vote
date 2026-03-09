@@ -6,6 +6,8 @@
 
 see **project.md** for project info. project.md is also designed to be passed to an LLM along with any prompts for assistance with the project.
 
+see **ROADMAP.md** for the current product and engineering roadmap.
+
 ### running locally
 
 **1\.** Set up your own discord app, get the token and add it to .env, invite the bot to your server
