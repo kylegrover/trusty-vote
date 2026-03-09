@@ -8,6 +8,8 @@ see **project.md** for project info. project.md is also designed to be passed to
 
 see **ROADMAP.md** for the current product and engineering roadmap.
 
+see **SELF_HOSTING.md** for a minimal self-hosting setup using only this repo and PostgreSQL.
+
 ### running locally
 
 **1\.** Set up your own discord app, get the token and add it to .env, invite the bot to your server
@@ -19,6 +21,8 @@ see **ROADMAP.md** for the current product and engineering roadmap.
 **2b.** set up a local postgres server and provide it via DATABASE_URL .env var
 
 The bot should add its slash commands to your server and you can interface with it as normal. Embedded-postgres provides an sqlite-like experience where you can run the bot in one file, but it is currently not persisted between runs. I think that's possible and may be added in the future.
+
+for a barebones self-hosting example, see `docker-compose.yml` and **SELF_HOSTING.md**.
 
 ### misc links and info
 
