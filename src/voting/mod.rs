@@ -19,3 +19,6 @@ pub struct VoteCount {
     pub score: f64,
     pub rank: usize,
 }
+
+#[cfg(test)]
+mod tests;

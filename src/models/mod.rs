@@ -109,3 +109,6 @@ impl Poll {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
