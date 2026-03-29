@@ -74,6 +74,8 @@ Goal: make the bot easier to trust, easier to run, and easier to understand with
 
 Goal: make voting behavior defensible and regression-resistant.
 
+STAR tie-breaking: porting [kylegrover/startie](https://github.com/kylegrover/startie) (fork of tim-one/startie) to Rust and integrate
+
 ### 1. Voting Method Tests
 
 - Add unit tests for STAR, plurality, ranked choice, and approval tallying.

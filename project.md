@@ -1,213 +1,152 @@
-# Trusty-Vote: Discord STAR Voting Bot
+# Trusty Vote: Discord Voting Bot
 
 ## Project Overview
-Trusty Vote (previously Rusty Bote) is a lightweight Discord bot written in Rust that allows server members to create and participate in polls using various voting methods—STAR voting, plurality, ranked choice, and approval. The bot provides an intuitive interface through slash commands and interactive components.
 
-## Core Features
-- Create polls via slash commands  
-- Support for multiple voting methods:  
-  - STAR (Score Then Automatic Runoff) voting  
-  - Simple plurality voting  
-  - Ranked choice voting  
-  - Approval voting  
-- Interactive voting through Discord buttons and select menus  
-- Customizable poll duration (default: 24 hours, or manual close)  
-- Automatic or manual poll closing  
-- Clear results display  
-- Lightweight and efficient design  
+Trusty Vote (previously Rusty Bote) is a lightweight Discord bot written in Rust for running polls with alternative voting methods: STAR, Plurality, Ranked Choice, and Approval. It is live and deployed on Railway, serving real Discord servers.
 
-## Technical Architecture
+The bot is one part of a three-repo system (bot, website, API), but only this repo is required for self-hosting.
 
-### Technology Stack
-- **Language**: Rust
-- **Discord API**: [Serenity](https://github.com/serenity-rs/serenity)
-- **Database**: PostgreSQL (with optional embedded Postgres for local development)
-- **ORM**: [SQLx](https://github.com/launchbadge/sqlx)
+## Deployment
 
-### Data Persistence
-The bot uses PostgreSQL for data storage. For local development, you can use the `embedded-postgres` feature to run a temporary Postgres instance without external setup. In production, set the `DATABASE_URL` environment variable to point to your Postgres server.
+- **Hosting:** Railway with auto-deploy
+- **Branch flow:** feature branches -> `dev` (staging auto-deploy) -> `master` (production auto-deploy)
+- **Architecture:** Single bot instance + single PostgreSQL database (intentional, not a limitation)
 
-#### Database Schema
-- **polls**: Stores poll metadata, including ID, question, voting method, timestamps, and status
-- **poll_options**: Stores options for each poll, with position tracking
-- **votes**: Records user votes with ratings for each poll option
+## Technology Stack
 
-### Discord Integration
-- Utilizes Discord's slash commands API for command registration and handling
-- Leverages Discord's message components (buttons, select menus) for interactive voting
-- Uses embeds for visual presentation of polls and results
-- **Required Permissions**: `View Channel`, `Send Messages`, `Embed Links`, `Read Message History`, `Manage Messages` (for updating poll messages). These should be requested during the bot invite or configured in server settings.
+- **Language:** Rust (edition 2024)
+- **Discord API:** Serenity 0.11
+- **Database:** PostgreSQL via SQLx 0.8
+- **Async Runtime:** Tokio
+- **Optional:** Embedded PostgreSQL for local dev (`cargo run --features embedded-postgres`)
 
-## User Flow
+## Source Structure
 
-### Poll Creation
-1. User invokes the `/poll` slash command
-2. User provides:
-   - Poll question
-   - Options (candidates/choices)
-   - Voting method selection
-   - Poll duration (or manual close option)
-3. Bot creates and posts the poll as an embed with interactive components
+```
+src/
+├── main.rs              # Bot init, event loop, command registration
+├── commands/
+│   ├── mod.rs           # Re-exports
+│   └── poll.rs          # All /poll subcommand handlers (~1000 lines, largest file)
+├── db/
+│   └── mod.rs           # PostgreSQL schema, queries, connection pooling
+├── handlers/
+│   ├── mod.rs           # Interaction routing, component dispatch
+│   └── vote.rs          # Per-method voting UI handlers
+├── models/
+│   ├── mod.rs           # Poll, Vote, PollOption, VotingMethod structs
+│   └── tests.rs         # Model unit tests
+├── tasks/
+│   ├── mod.rs           # Re-exports
+│   └── poll_ender.rs    # Background task checking expired polls every 60s
+├── voting/
+│   ├── mod.rs           # PollResults, VoteCount structs
+│   ├── star.rs          # STAR tally (scoring + runoff)
+│   ├── plurality.rs     # Plurality tally
+│   ├── ranked.rs        # Ranked choice instant runoff
+│   ├── approval.rs      # Approval tally
+│   └── tests.rs         # Voting method unit tests
+└── utils/
+    └── mod.rs           # Placeholder (empty)
+```
 
-### Voting Process
-1. Server members interact with buttons or select menus to cast votes
-   - For STAR voting: Rate each option from 0-5 stars using select menus
-   - For plurality voting: Select a single option
-   - For ranked choice: Arrange options in order of preference
-   - For approval voting: Toggle approval for any number of options
-2. Votes are recorded in the database
-3. Users can update their votes until the poll closes
+## Database Schema
 
-### Results Calculation
-1. When poll closes (automatically or manually):
-   - Bot calculates results using the selected voting method
-   - Results are displayed in an updated embed
-   - For STAR voting: Shows both the scoring round and runoff round
-   - For ranked choice: Shows elimination rounds
+Three tables, created inline at startup via `CREATE TABLE IF NOT EXISTS` (no migration tool yet):
 
-## Command Structure
+- **polls** — Poll metadata (question, method, timestamps, active status, role restrictions, vote sharing flag)
+- **poll_options** — Options per poll with position ordering
+- **votes** — Per-user per-option ratings. PK: (user_id, poll_id, option_id). Supports upsert for vote changes.
 
-### Primary Commands
-- `/poll create` - Create a new poll  
-- `/poll end [poll-id]` - Manually end an active poll  
-- `/poll list` - Show active and recent polls in the server  
-- `/poll help` - Display usage information and command help
+## Discord Commands
 
-### Help Subcommand Implementation
-The `/poll help` subcommand provides a concise overview of Trusty-Vote. It summarizes the workflow, voting methods, and guides users through the bot's functionality.
+| Command | Description | Permissions |
+|---|---|---|
+| `/poll create` | Create poll with question, options, method, optional duration/role/sharing | Any user |
+| `/poll end [id]` | End an active poll | Creator or admin |
+| `/poll results [id]` | View results of ended poll | Any user |
+| `/poll list` | List active and recently ended polls | Any user |
+| `/poll help` | Usage guide | Any user |
+| `/poll export [id]` | Export votes as CSV file attachment | Creator or admin |
 
 ### Poll Creation Parameters
-- `question` - The poll question  
-- `options` - The available choices (minimum: 2, maximum: 10)  
-- `method` - Voting method (STAR, plurality, ranked choice, approval)  
-- `duration` - Duration of the poll in minutes (default: 1440 = 24 hours, 0 = manual close)  
 
-## Development Roadmap
+- `question` — Poll question (required)
+- `options` — Comma-separated choices, 2-10 (required)
+- `method` — STAR, Plurality, Ranked Choice, or Approval (required)
+- `duration` — Minutes until auto-close, default 1440 (24h), 0 = manual close (optional)
+- `allowed_role` — Restrict voting to a single role (optional)
+- `share_vote` — Enable vote sharing button (optional)
 
-### Current Status: Phase 2
-- ✅ Core voting system implemented with all four voting methods
-- ✅ Complete interaction handling architecture
-- ✅ Database persistence for polls and votes
-- ✅ Interactive UI components for all voting methods
-- ✅ Poll lifecycle management (creation, voting, ending)
-- ✅ Results calculation and display
-- ✅ Comprehensive error handling and logging
-- ✅ Poll listing functionality
-- ✅ Help command with clear documentation
+## Voting Methods
 
-### Phase 2 Focus (Current)
-- UI refinements and accessibility improvements
-- Performance optimizations for larger servers
-- Enhanced result visualizations
-- Poll templates and configuration options
+### STAR (Score Then Automatic Runoff)
+- Users rate each option 0-5 stars via select menus (paginated, 4 options per page)
+- Scoring phase: sum all ratings per option
+- Runoff phase: top 2 by score, each voter's preference compared, most-preferred wins
+- **Known issue:** Tie-breaking is currently non-deterministic (HashMap iteration order). Plan: port [tim-one/startie](https://github.com/tim-one/startie) to Rust (fork at kylegrover/startie).
 
-### Phase 3 Planning
-- Integration with server roles for poll access control
-- Scheduled polls
-- Data export options
-- Advanced analytics
+### Plurality
+- Users click one button to vote
+- Simple count, highest wins
+- Ties resolved arbitrarily (same HashMap issue)
 
-## Voting Methods Implementation Details
+### Ranked Choice (Instant Runoff)
+- Users arrange preferences with up/down/remove buttons (paginated)
+- Rounds: count first preferences, check majority (>50% of all voters), eliminate lowest, repeat
+- Eliminates ALL tied-lowest candidates per round
+- Exhausted ballots don't reduce the majority threshold
+- Safety break prevents infinite loops
 
-### STAR Voting
-Score Then Automatic Runoff:
-1. **UI Implementation**: Interactive select menus that allow users to choose a 0-5 star rating for each option
-2. **Data Structure**: Votes stored with option_id and rating values
-3. **Results Calculation**: Two-phase process:
-   - Scoring phase: Sum of ratings for each option
-   - Runoff phase: Between the two highest-scoring options, the one preferred by more voters wins
+### Approval
+- Users toggle approve/disapprove per option
+- Count approvals, highest wins
 
-### Plurality Voting
-1. **UI Implementation**: Simple button interface with one click per option
-2. **Data Structure**: One vote record per user with selected option
-3. **Results Calculation**: Direct count of votes per option, highest total wins
+## Interaction Architecture
 
-### Ranked Choice Voting
-1. **UI Implementation**: Interactive up/down/remove buttons to arrange preferences
-2. **Data Structure**: Ordered array of option preferences per voter
-3. **Results Calculation**: Elimination rounds with vote transfers until majority reached
+- Custom IDs follow format: `actionName_pollId_optionId[_additionalData]`
+- All vote interactions are ephemeral (private to voter)
+- Component routing in `handlers/mod.rs` dispatches ~15+ custom_id prefixes
+- Role restrictions enforced at the handler level before reaching voting logic
+- Votes saved atomically; batch saves use transactions
 
-### Approval Voting
-1. **UI Implementation**: Toggle buttons for each option (approve/disapprove)
-2. **Data Structure**: Array of approved options per voter
-3. **Results Calculation**: Simple count of approvals per option, highest total wins
+## Test Coverage
 
-## Architecture Insights
+**15 passing tests** (`cargo test`):
 
-### Component Interaction Flow
-The Discord interaction system follows a structured pattern:
-1. Incoming interaction received by `handle_interaction()`
-2. Routed to appropriate handler based on type (command vs. component)
-3. For components, the custom_id is parsed to determine:
-   - Associated poll ID
-   - Action type (vote button, star rating, approval toggle, etc.)
-4. Poll status verification ensures closed polls reject new votes
-5. Context-aware response generation based on interaction type and state
+- 2 model tests (default duration, manual close)
+- 4 STAR tests (scoring+runoff, runoff tie, skipped options, equal scores)
+- 3 Plurality tests (no votes, counting, ties)
+- 2 Approval tests (counting, all-approve)
+- 4 Ranked Choice tests (elimination to majority, exhausted ballots, unbreakable tie, duplicate rankings)
 
-### Error Handling Strategy
-The codebase implements a multi-layered error handling approach:
-1. **User-facing errors**: Clear, actionable messages for permission issues or invalid inputs
-2. **Comprehensive logging**: Error, warn, and info levels with context-rich messages
-3. **Graceful degradation**: Component failures don't crash the entire application
-4. **Context preservation**: Custom IDs and error contexts help debug issues
-5. **Permission issues**: Detailed error messages that suggest permission requirements
+**Not tested:** Database operations, command validation, interaction routing, CSV export, poll lifecycle (ending/expiration), permission enforcement.
 
-## Technical Considerations
+## Current Gaps
 
-### Discord API Limitations
-- **Component action rows**: Maximum 5 per message, limiting UI complexity
-- **Interaction timeout**: 3-second response window requires efficient processing
-- **Rate limits**: Managed with proper error handling and retry logic
+Refer to ROADMAP.md for the full plan. Key gaps as of now:
 
-### Database Optimizations
-- **Indexed queries**: Poll retrieval optimized for active lookups
-- **Transaction support**: Ensures vote integrity during concurrent operations
-- **Query efficiency**: Minimized database round-trips in hot paths
+1. **No CI** — No GitHub Actions workflow. Build/test failures can ship unnoticed.
+2. **No database migrations** — Schema is inline in code. First schema evolution with existing deployments will need care.
+3. **Non-deterministic tie-breaking** — HashMap order for STAR and Plurality ties. Startie port will fix this.
+4. **Thin test coverage** — Voting tally logic is well-tested. Everything else (DB, commands, handlers, permissions, exports) is untested.
+5. **Dead code warnings** — `winner_id` and `raw_results` fields in PollResults are unused.
+6. **utils/mod.rs** is an empty placeholder.
 
-### Scalability Considerations
-- **Memory footprint**: Minimal state kept in memory between interactions
-- **Connection pooling**: Efficient database connection management
-- **Command registration**: Guild-specific vs. global command decisions
+## What's Complete
 
-## Known Bugs and Fixed Issues
-1. ✅ Fixed poll ID parsing for "done_voting_" buttons where the wrong array index was being used
-2. ✅ Fixed ephemeral message handling - implemented proper follow-up responses
-3. ✅ Added safety break for ranked choice algorithm to prevent infinite loops
-4. ✅ Implemented truncation for result summaries exceeding Discord's embed field character limit (1024)
-5. ✅ Improved error handling for missing permissions with actionable feedback
+- All 4 voting methods fully implemented with interactive UIs
+- Poll lifecycle: create, vote, end (manual + auto), results, list, export
+- CSV export as Discord file attachment
+- Role-based poll access control (single role)
+- Vote sharing (optional per poll)
+- Self-hosting documentation + Docker Compose example
+- Embedded Postgres for local dev
+- Permission model for end/export (creator or admin)
+- Background poll expiration task (60s interval)
 
-## Upcoming Enhancements
-1. Advanced poll scheduling and time zone support
-2. Role-based poll access control
-3. Graphical representation of voting results using Unicode bar charts
-4. Exportable results data
+## Related Repositories
 
-## Next Development Priorities
-
-1. **Enhanced Results Visualization**
-   - ✅ Add more detailed breakdowns of voting rounds to the results summary
-   - Add graphical representations of voting outcomes (using Unicode blocks)
-   - Support for exporting results data (e.g., CSV)
-
-2. **Advanced Poll Configuration**
-   - Role-restricted polls
-   - Advanced scheduling options
-   - Customizable voting thresholds
-
-3. **Performance Optimizations**
-   - Database query optimization for high-volume servers
-   - Asynchronous processing improvements
-   - Caching strategies for active polls
-
-4. **UI/UX Improvements**
-   - Modal dialogs for complex inputs
-   - Improved mobile experience
-   - Accessibility enhancements
-
-## Implementation Notes
-- All voting methods are fully implemented with working interfaces
-- Database schema supports persistent storage across bot restarts (when using a real Postgres server; embedded Postgres is ephemeral by default)
-- The command system has comprehensive subcommand support
-- Advanced error handling with user feedback and detailed logging
-- Discord component limitations are handled with appropriate UI design patterns
-- For local development, use `cargo run --features embedded-postgres` to start the bot with an embedded Postgres instance (data is not persisted between runs). For production or persistent storage, set up a Postgres server and provide the connection string via the `DATABASE_URL` environment variable in your `.env` file.
+- **Website** — Separate repo, live (not required for self-hosting)
+- **API** — Separate repo, live (not required for self-hosting)
+- **Startie** — Forked to kylegrover/startie, will be ported to Rust for STAR tie-breaking
