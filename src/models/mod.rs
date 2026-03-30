@@ -60,10 +60,10 @@ pub struct PollSummary {
     pub id: String,
     pub question: String,
     pub ends_at: Option<DateTime<Utc>>,
-    pub is_active: bool,
 }
 
 impl Poll {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         guild_id: String,
         channel_id: String,

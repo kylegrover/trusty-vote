@@ -66,11 +66,6 @@ impl Database {
         })
     }
 
-    // Get a reference to the connection pool
-    pub fn pool(&self) -> &PgPool {
-        &self.pool
-    }
-
     // Initialize the database schema
     async fn init_schema(pool: &PgPool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         sqlx::query(
@@ -355,7 +350,6 @@ impl Database {
                     .try_get::<Option<DateTime<Utc>>, _>("ends_at")
                     .ok()
                     .flatten(),
-                is_active: true,
             })
             .collect();
 
@@ -391,7 +385,6 @@ impl Database {
                     .try_get::<Option<DateTime<Utc>>, _>("ends_at")
                     .ok()
                     .flatten(),
-                is_active: false,
             })
             .collect();
         Ok(summaries)

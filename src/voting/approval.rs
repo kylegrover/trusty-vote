@@ -16,10 +16,10 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
 
     // Count approvals (in approval voting, a vote of 1 means approved)
     for vote in votes {
-        if vote.rating == 1 {
-            if let Some(count) = option_approvals.get_mut(&vote.option_id) {
-                *count += 1;
-            }
+        if vote.rating == 1
+            && let Some(count) = option_approvals.get_mut(&vote.option_id)
+        {
+            *count += 1;
         }
         voters.insert(vote.user_id.clone());
     }
@@ -51,7 +51,6 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
 
     // Determine winner
     if !vote_counts.is_empty() && vote_counts[0].score > 0.0 {
-        let winner_id = vote_counts[0].option_id.clone();
         let winner_text = vote_counts[0].option_text.clone();
         let winner_approvals = vote_counts[0].score as i32;
 
@@ -60,7 +59,7 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
 
         for count in &vote_counts {
             let percentage = if !voters.is_empty() {
-                (count.score as f64 / voters.len() as f64) * 100.0
+                (count.score / voters.len() as f64) * 100.0
             } else {
                 0.0
             };
@@ -76,16 +75,12 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         PollResults {
             winner: format!("{} ({} approvals)", winner_text, winner_approvals),
             summary,
-            winner_id,
-            raw_results: vote_counts,
         }
     } else {
         // No votes cast
         PollResults {
             winner: "No winner".to_string(),
             summary: "No votes were cast.".to_string(),
-            winner_id: "".to_string(),
-            raw_results: Vec::new(),
         }
     }
 }

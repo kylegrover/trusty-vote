@@ -126,7 +126,11 @@ fn star_runs_scoring_then_runoff() {
     let results = star::calculate_results(&poll, &votes);
 
     assert_eq!(results.winner, "Alpha (2 preferred votes in runoff)");
-    assert!(results.summary.contains("**Runoff Phase:** Comparing Alpha vs Beta"));
+    assert!(
+        results
+            .summary
+            .contains("**Runoff Phase:** Comparing Alpha vs Beta")
+    );
     assert!(results.summary.contains("Total voters: 3"));
 }
 
@@ -140,15 +144,15 @@ fn star_runoff_tie_prefers_scoring_winner() {
         // Scoring: Alpha: 4, Beta: 5, Gamma: 0
         build_vote("u2", &poll.id, &poll.options[0].id, 4),
         build_vote("u2", &poll.id, &poll.options[1].id, 5),
-        // Total Scores: Alpha: 9, Beta: 9. 
-        // Note: The implementation sorts and takes top 2. 
+        // Total Scores: Alpha: 9, Beta: 9.
+        // Note: The implementation sorts and takes top 2.
         // Correct STAR would need a tie-breaker for the finalists if 3 candidates tied for 2 slots.
         // Here we just test the runoff tie (1 vs 1).
     ];
 
     let results = star::calculate_results(&poll, &votes);
 
-    // Both Alpha and Beta have 1 win in runoff. 
+    // Both Alpha and Beta have 1 win in runoff.
     // The current implementation uses runoff_votes1 >= runoff_votes2 which favors the first finalist.
     // However, top_two is derived from score_counts which is stable-sorted by score.
     // If scores are equal, their relative order is based on the initial iteration of the HashMap.
@@ -233,7 +237,7 @@ fn ranked_choice_exhausted_ballots_calculate_majority_based_on_all_voters() {
     ];
     // No second preferences provided, so after Gamma and Beta get eliminated, ballots exhaust.
     let results = ranked::calculate_results(&poll, &votes);
-    
+
     // Total voters: 10. Majority needed: 6.
     // round 1: Alpha 5 (50%), Beta 3 (30%), Gamma 2 (20%). Eliminate Gamma.
     // round 2: Alpha 5, Beta 3. Eliminate Beta (voters 9 & 10 are exhausted).

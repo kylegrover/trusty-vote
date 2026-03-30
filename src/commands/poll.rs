@@ -310,7 +310,7 @@ async fn handle_create_poll(
         })
         .await;
 
-    if let Ok(_) = interaction_response {
+    if interaction_response.is_ok() {
         match command.get_interaction_response(&ctx.http).await {
             Ok(message) => {
                 let message_id_str = message.id.to_string();
@@ -481,10 +481,10 @@ fn create_poll_embed<'a>(embed: &'a mut CreateEmbed, poll: &Poll) -> &'a mut Cre
         .field("Poll ID", &poll.id, true)
         .field("Ends", ends_at_str, true);
 
-    if let Some(roles) = &poll.allowed_roles {
-        if let Some(role_id) = roles.get(0) {
-            embed = embed.field("Who Can Vote", format!("<@&{}> only", role_id), false);
-        }
+    if let Some(roles) = &poll.allowed_roles
+        && let Some(role_id) = roles.first()
+    {
+        embed = embed.field("Who Can Vote", format!("<@&{}> only", role_id), false);
     }
 
     embed

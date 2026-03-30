@@ -70,7 +70,7 @@ pub async fn handle_component(
 
     // Handle selection menus that don't have poll_id in custom_id
     if custom_id == "selectEndPoll" {
-        if let Some(poll_id) = component.data.values.get(0) {
+        if let Some(poll_id) = component.data.values.first() {
             // We need to fetch the poll to get channel_id and message_id
             match database.get_poll(poll_id).await {
                 Ok(poll) => {
@@ -129,7 +129,7 @@ pub async fn handle_component(
         }
         return Ok(());
     } else if custom_id == "selectResultsPoll" {
-        if let Some(poll_id) = component.data.values.get(0) {
+        if let Some(poll_id) = component.data.values.first() {
             match database.get_poll(poll_id).await {
                 Ok(poll) => {
                     let votes = database.get_poll_votes(poll_id).await?;
@@ -182,7 +182,7 @@ pub async fn handle_component(
 
     // Extract poll_id from the component custom_id
     let poll_id_opt: Option<String> = if custom_id == "vote_button" || custom_id == "voteButton" {
-        component.message.embeds.get(0).and_then(|embed| {
+        component.message.embeds.first().and_then(|embed| {
             embed
                 .fields
                 .iter()
@@ -191,14 +191,9 @@ pub async fn handle_component(
         })
     } else {
         let poll_id = parse_poll_id_from_custom_id(custom_id);
-        if poll_id.is_none() {
-            warn!("Could not parse poll ID from custom_id: {}", custom_id);
-        } else {
-            info!(
-                "Parsed poll ID '{}' from custom_id: {}",
-                poll_id.as_ref().unwrap(),
-                custom_id
-            );
+        match &poll_id {
+            None => warn!("Could not parse poll ID from custom_id: {}", custom_id),
+            Some(id) => info!("Parsed poll ID '{}' from custom_id: {}", id, custom_id),
         }
         poll_id
     };

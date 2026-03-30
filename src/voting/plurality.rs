@@ -1,4 +1,5 @@
 use crate::models::{Poll, Vote};
+use crate::voting::tiebreak;
 use crate::voting::{PollResults, VoteCount};
 use std::collections::HashMap;
 
@@ -24,24 +25,48 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         }
     }
 
+    // Build deterministic tiebreak ordering
+    let tiebreak_scores: Vec<(String, i64)> = option_votes
+        .iter()
+        .map(|(id, score)| {
+            let text = option_text.get(id).cloned().unwrap_or_default();
+            (text, *score as i64)
+        })
+        .collect();
+    let tiebreak_order = tiebreak::permute(&tiebreak_scores, b"");
+    let tiebreak_rank: HashMap<String, usize> = tiebreak_order
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.clone(), i))
+        .collect();
+
     // Build vote counts
     let mut vote_counts: Vec<VoteCount> = option_votes
         .iter()
-        .map(|(option_id, votes)| {
-            VoteCount {
-                option_id: option_id.clone(),
-                option_text: option_text.get(option_id).cloned().unwrap_or_default(),
-                score: *votes as f64,
-                rank: 0, // Will set this after sorting
-            }
+        .map(|(option_id, votes)| VoteCount {
+            option_id: option_id.clone(),
+            option_text: option_text.get(option_id).cloned().unwrap_or_default(),
+            score: *votes as f64,
+            rank: 0,
         })
         .collect();
 
-    // Sort by score (highest first)
+    // Sort by score (highest first), tiebreak by startie permutation order
     vote_counts.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                let ra = tiebreak_rank
+                    .get(&a.option_text)
+                    .copied()
+                    .unwrap_or(usize::MAX);
+                let rb = tiebreak_rank
+                    .get(&b.option_text)
+                    .copied()
+                    .unwrap_or(usize::MAX);
+                ra.cmp(&rb)
+            })
     });
 
     // Assign ranks
@@ -51,7 +76,6 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
 
     // Determine winner
     if !vote_counts.is_empty() && vote_counts[0].score > 0.0 {
-        let winner_id = vote_counts[0].option_id.clone();
         let winner_text = vote_counts[0].option_text.clone();
         let winner_votes = vote_counts[0].score as i32;
 
@@ -60,7 +84,7 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
 
         for count in &vote_counts {
             let percentage = if !voters.is_empty() {
-                (count.score as f64 / voters.len() as f64) * 100.0
+                (count.score / voters.len() as f64) * 100.0
             } else {
                 0.0
             };
@@ -76,16 +100,12 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         PollResults {
             winner: format!("{} ({} votes)", winner_text, winner_votes),
             summary,
-            winner_id,
-            raw_results: vote_counts,
         }
     } else {
         // No votes cast
         PollResults {
             winner: "No winner".to_string(),
             summary: "No votes were cast.".to_string(),
-            winner_id: "".to_string(),
-            raw_results: Vec::new(),
         }
     }
 }

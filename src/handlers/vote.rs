@@ -35,7 +35,7 @@ pub async fn handle_vote_button(
                     .data
                     .custom_id
                     .split('_')
-                    .last()
+                    .next_back()
                     .and_then(|s| s.parse::<usize>().ok())
                     .unwrap_or(0)
             } else if component.data.custom_id.starts_with("star_page_") {
@@ -43,7 +43,7 @@ pub async fn handle_vote_button(
                     .data
                     .custom_id
                     .split('_')
-                    .last()
+                    .next_back()
                     .and_then(|s| s.parse::<usize>().ok())
                     .unwrap_or(0)
             } else {
@@ -51,7 +51,7 @@ pub async fn handle_vote_button(
             };
 
             let options_per_page = 4;
-            let total_pages = (poll.options.len() + options_per_page - 1) / options_per_page;
+            let total_pages = poll.options.len().div_ceil(options_per_page);
             let start_idx = page * options_per_page;
             let end_idx = std::cmp::min(start_idx + options_per_page, poll.options.len());
 
@@ -297,7 +297,7 @@ pub async fn handle_vote_button(
                     .data
                     .custom_id
                     .split('_')
-                    .last()
+                    .next_back()
                     .and_then(|s| s.parse::<usize>().ok())
                     .unwrap_or(0)
             } else if component.data.custom_id.starts_with("rank_page_") {
@@ -305,7 +305,7 @@ pub async fn handle_vote_button(
                     .data
                     .custom_id
                     .split('_')
-                    .last()
+                    .next_back()
                     .and_then(|s| s.parse::<usize>().ok())
                     .unwrap_or(0)
             } else {
@@ -313,7 +313,7 @@ pub async fn handle_vote_button(
             };
 
             let options_per_page = 4;
-            let total_pages = (poll.options.len() + options_per_page - 1) / options_per_page;
+            let total_pages = poll.options.len().div_ceil(options_per_page);
             let start_idx = page * options_per_page;
             let end_idx = std::cmp::min(start_idx + options_per_page, poll.options.len());
             let options_to_show = &poll.options[start_idx..end_idx];
@@ -419,7 +419,7 @@ pub async fn handle_star_vote(
         poll_id, option_id, rating
     );
 
-    if rating < 0 || rating > 5 {
+    if !(0..=5).contains(&rating) {
         warn!("Rating out of 0-5 range: {}", rating);
         return Ok(());
     }
@@ -444,7 +444,7 @@ pub async fn handle_star_vote(
         .unwrap_or(0);
     let current_page = option_index / options_per_page;
 
-    let total_pages = (poll.options.len() + options_per_page - 1) / options_per_page;
+    let total_pages = poll.options.len().div_ceil(options_per_page);
     let start_idx = current_page * options_per_page;
     let end_idx = std::cmp::min(start_idx + options_per_page, poll.options.len());
 
@@ -570,7 +570,7 @@ pub async fn handle_star_select(
     let rating = component
         .data
         .values
-        .get(0)
+        .first()
         .and_then(|v| v.parse::<i32>().ok())
         .unwrap_or(0);
 
@@ -852,19 +852,19 @@ pub async fn handle_done_voting(
                 .interaction_response_data(|message| {
                     message.content(&vote_summary).components(|c| {
                         c.create_action_row(|row| {
+                            row.create_button(|btn| {
+                                btn.custom_id(format!("voteChange_{}", poll_id))
+                                    .label("Change My Vote")
+                                    .style(ButtonStyle::Secondary)
+                            });
+                            if poll.allow_vote_sharing {
                                 row.create_button(|btn| {
-                                    btn.custom_id(format!("voteChange_{}", poll_id))
-                                        .label("Change My Vote")
-                                        .style(ButtonStyle::Secondary)
+                                    btn.custom_id(format!("shareVote_{}", poll_id))
+                                        .label("Share My Vote")
+                                        .style(ButtonStyle::Primary)
                                 });
-                                if poll.allow_vote_sharing {
-                                    row.create_button(|btn| {
-                                        btn.custom_id(format!("shareVote_{}", poll_id))
-                                            .label("Share My Vote")
-                                            .style(ButtonStyle::Primary)
-                                    });
-                                }
-                                row
+                            }
+                            row
                         })
                     })
                 })

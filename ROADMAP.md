@@ -36,12 +36,10 @@ The intended deployment model is a single bot instance backed by a single Postgr
 
 ## Current Gaps To Address
 
-- Self-hosting is possible, but the repo does not yet present a clean minimal path for external operators.
 - Database schema setup is implicit in code instead of managed with explicit migrations.
-- CSV export currently behaves like a text response instead of a proper attached file.
-- There is no meaningful automated test suite yet.
 - CI and release-quality verification are missing.
-- Some docs still reflect older or inconsistent assumptions and should be aligned with the PostgreSQL-backed bot.
+- ~~Non-deterministic tie-breaking in STAR and Plurality.~~ ✓ Fixed via startie port.
+- Test coverage exists for voting tally logic but not for DB, commands, handlers, permissions, or exports.
 
 ## Roadmap
 
@@ -49,13 +47,9 @@ The intended deployment model is a single bot instance backed by a single Postgr
 
 Goal: make the bot easier to trust, easier to run, and easier to understand without changing the single-instance architecture.
 
-### 1. Self-Hosting Basics
+### 1. Self-Hosting Basics ✓
 
-- Add a dedicated self-hosting guide focused only on this bot and PostgreSQL.
-- Document the minimum required Discord application setup, environment variables, permissions, and startup flow.
-- Provide a barebones example deployment for other operators. Prefer a minimal example that is easy to copy, such as a small Docker Compose setup or equally simple process-based instructions.
-- Keep the example intentionally narrow: one bot process, one PostgreSQL instance, no API repo, no website repo.
-- Fix example configuration files so they match the actual production database story.
+Done. See SELF_HOSTING.md, docker-compose.yml, and readme.md.
 
 ### 2. Database Hygiene
 
@@ -74,14 +68,16 @@ Goal: make the bot easier to trust, easier to run, and easier to understand with
 
 Goal: make voting behavior defensible and regression-resistant.
 
-STAR tie-breaking: porting [kylegrover/startie](https://github.com/kylegrover/startie) (fork of tim-one/startie) to Rust and integrate
+STAR tie-breaking: ✓ Ported [kylegrover/startie](https://github.com/kylegrover/startie) to Rust. Integrated into STAR and Plurality voting.
 
-### 1. Voting Method Tests
+### 1. Voting Method Tests (partial ✓)
 
-- Add unit tests for STAR, plurality, ranked choice, and approval tallying.
-- Build fixed fixtures for common scenarios: simple win, tie, no-vote case, partial ballots, exhausted ballots, and edge-case rankings.
-- Add regression tests for known or likely failure modes, especially ranked-choice elimination order and STAR runoff behavior.
-- Prefer tests that assert exact winners and exact result summaries where summaries are intended to be user-visible contract.
+15 unit tests exist covering STAR (scoring+runoff, ties, skipped options, equal scores), Plurality (no votes, counting, ties), Approval (counting, all-approve), Ranked Choice (elimination, exhausted ballots, unbreakable tie, duplicate rankings), and model construction.
+
+Remaining:
+- Build fixed fixtures for additional edge cases (partial ballots, more tie scenarios).
+- Add regression tests for ranked-choice elimination order and STAR runoff behavior.
+- Assert exact result summaries where summaries are user-visible contract.
 
 ### 2. Poll Lifecycle Tests
 
@@ -100,11 +96,9 @@ STAR tie-breaking: porting [kylegrover/startie](https://github.com/kylegrover/st
 
 Goal: make exports useful in real servers and align behavior with user expectations.
 
-### 1. CSV Export Attachments
+### 1. CSV Export Attachments ✓
 
-- Change poll export to send a CSV file attachment by default, never inline as the message body.
-- Include poll metadata in the file or message context: poll ID, question, method, created time, ended time.
-- Keep exports ephemeral or permission-limited in Discord so raw vote data is not posted publicly by accident.
+Done. Export sends a CSV file attachment with poll metadata. Permission-limited to creator or admin.
 
 ### 2. Export Format Quality
 
@@ -180,11 +174,11 @@ The current voting methodology code already has real value outside the bot. It i
 
 ## Rough Order Of Execution
 
-1. Add this roadmap and align docs around the single-instance model.
-2. Add a minimal self-hosting guide and example deployment.
+1. ~~Add this roadmap and align docs around the single-instance model.~~ ✓
+2. ~~Add a minimal self-hosting guide and example deployment.~~ ✓
 3. Move schema setup to migrations.
-4. Change CSV export to real file attachments.
-5. Add unit and regression tests for all voting methods.
+4. ~~Change CSV export to real file attachments.~~ ✓
+5. Add unit and regression tests for all voting methods. (partial — 15 tests exist)
 6. Add lightweight CI.
 7. Refactor the voting logic behind a cleaner internal boundary.
 8. Decide whether the extracted core is strong enough to become a separate crate.

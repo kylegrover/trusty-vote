@@ -30,8 +30,6 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         return PollResults {
             winner: "No winner".to_string(),
             summary: "No valid rankings were submitted.".to_string(),
-            winner_id: "".to_string(),
-            raw_results: Vec::new(),
         };
     }
 
@@ -41,7 +39,8 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
     let majority_threshold = (total_voters as f64 / 2.0).floor() + 1.0; // Votes needed for majority
     let mut round = 1;
     let mut summary = String::new();
-    let mut final_results: Vec<VoteCount> = Vec::new(); // Store final round results
+    #[allow(unused_assignments)]
+    let mut final_results: Vec<VoteCount> = Vec::new();
 
     loop {
         summary.push_str(&format!("**Round {}**\n", round));
@@ -57,7 +56,7 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         // For each voter, find their highest-ranked non-eliminated candidate
         for user_votes in user_rankings.values() {
             let mut best_option: Option<String> = None;
-            let mut best_rank = std::i32::MAX;
+            let mut best_rank = i32::MAX;
 
             // Find the highest ranked option (lowest rank number) that hasn't been eliminated
             for (option_id, rank) in user_votes {
@@ -68,10 +67,10 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
             }
 
             // Count this as a first preference
-            if let Some(option_id) = best_option {
-                if let Some(count) = first_preferences.get_mut(&option_id) {
-                    *count += 1;
-                }
+            if let Some(option_id) = best_option
+                && let Some(count) = first_preferences.get_mut(&option_id)
+            {
+                *count += 1;
             }
         }
 
@@ -196,14 +195,8 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         "No clear winner".to_string()
     };
 
-    let winner_id = final_results
-        .first()
-        .map_or("".to_string(), |c| c.option_id.clone());
-
     PollResults {
         winner: winner_text,
         summary,
-        winner_id,
-        raw_results: final_results, // Return the results of the final round
     }
 }

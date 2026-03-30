@@ -45,9 +45,8 @@ src/
 │   ├── plurality.rs     # Plurality tally
 │   ├── ranked.rs        # Ranked choice instant runoff
 │   ├── approval.rs      # Approval tally
+│   ├── tiebreak.rs      # Deterministic tiebreaking (startie port)
 │   └── tests.rs         # Voting method unit tests
-└── utils/
-    └── mod.rs           # Placeholder (empty)
 ```
 
 ## Database Schema
@@ -84,7 +83,7 @@ Three tables, created inline at startup via `CREATE TABLE IF NOT EXISTS` (no mig
 - Users rate each option 0-5 stars via select menus (paginated, 4 options per page)
 - Scoring phase: sum all ratings per option
 - Runoff phase: top 2 by score, each voter's preference compared, most-preferred wins
-- **Known issue:** Tie-breaking is currently non-deterministic (HashMap iteration order). Plan: port [tim-one/startie](https://github.com/tim-one/startie) to Rust (fork at kylegrover/startie).
+- **Tie-breaking:** Deterministic via ported [startie](https://github.com/kylegrover/startie) algorithm (SHA-512 hash-based candidate permutation). Results match Python/JS implementations.
 
 ### Plurality
 - Users click one button to vote
@@ -112,13 +111,14 @@ Three tables, created inline at startup via `CREATE TABLE IF NOT EXISTS` (no mig
 
 ## Test Coverage
 
-**15 passing tests** (`cargo test`):
+**21 passing tests** (`cargo test`):
 
 - 2 model tests (default duration, manual close)
 - 4 STAR tests (scoring+runoff, runoff tie, skipped options, equal scores)
 - 3 Plurality tests (no votes, counting, ties)
 - 2 Approval tests (counting, all-approve)
 - 4 Ranked Choice tests (elimination to majority, exhausted ballots, unbreakable tie, duplicate rankings)
+- 6 Tiebreak tests (Python reference match, input order independence, magic bytes, int encoding, equal scores)
 
 **Not tested:** Database operations, command validation, interaction routing, CSV export, poll lifecycle (ending/expiration), permission enforcement.
 
@@ -128,10 +128,7 @@ Refer to ROADMAP.md for the full plan. Key gaps as of now:
 
 1. **No CI** — No GitHub Actions workflow. Build/test failures can ship unnoticed.
 2. **No database migrations** — Schema is inline in code. First schema evolution with existing deployments will need care.
-3. **Non-deterministic tie-breaking** — HashMap order for STAR and Plurality ties. Startie port will fix this.
 4. **Thin test coverage** — Voting tally logic is well-tested. Everything else (DB, commands, handlers, permissions, exports) is untested.
-5. **Dead code warnings** — `winner_id` and `raw_results` fields in PollResults are unused.
-6. **utils/mod.rs** is an empty placeholder.
 
 ## What's Complete
 
@@ -149,4 +146,4 @@ Refer to ROADMAP.md for the full plan. Key gaps as of now:
 
 - **Website** — Separate repo, live (not required for self-hosting)
 - **API** — Separate repo, live (not required for self-hosting)
-- **Startie** — Forked to kylegrover/startie, will be ported to Rust for STAR tie-breaking
+- **Startie** — Forked to kylegrover/startie, ported to Rust and integrated into STAR/Plurality tiebreaking

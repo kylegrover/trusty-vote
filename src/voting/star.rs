@@ -1,4 +1,5 @@
 use crate::models::{Poll, Vote};
+use crate::voting::tiebreak;
 use crate::voting::{PollResults, VoteCount};
 use std::collections::HashMap;
 
@@ -17,7 +18,7 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         voters.insert(vote.user_id.clone());
         let user_ratings = user_option_ratings.entry(vote.user_id.clone()).or_default();
         let current_rating = user_ratings.entry(vote.option_id.clone()).or_insert(0);
-        *current_rating = (*current_rating).max(vote.rating); // Keep the highest rating if user voted multiple times (shouldn't happen with UI)
+        *current_rating = (*current_rating).max(vote.rating);
     }
 
     // --- Scoring Phase ---
@@ -34,21 +35,47 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         }
     }
 
+    // Build deterministic tiebreak ordering using startie permutation
+    let tiebreak_scores: Vec<(String, i64)> = option_scores
+        .iter()
+        .map(|(id, score)| {
+            let text = option_text.get(id).cloned().unwrap_or_default();
+            (text, *score as i64)
+        })
+        .collect();
+    let tiebreak_order = tiebreak::permute(&tiebreak_scores, b"");
+    let tiebreak_rank: HashMap<String, usize> = tiebreak_order
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.clone(), i))
+        .collect();
+
     let mut score_counts: Vec<VoteCount> = option_scores
         .iter()
         .map(|(option_id, score)| VoteCount {
             option_id: option_id.clone(),
             option_text: option_text.get(option_id).cloned().unwrap_or_default(),
-            score: *score as f64, // Use score for sorting
+            score: *score as f64,
             rank: 0,
         })
         .collect();
 
-    // Sort by score (highest first)
+    // Sort by score (highest first), tiebreak by startie permutation order
     score_counts.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                let ra = tiebreak_rank
+                    .get(&a.option_text)
+                    .copied()
+                    .unwrap_or(usize::MAX);
+                let rb = tiebreak_rank
+                    .get(&b.option_text)
+                    .copied()
+                    .unwrap_or(usize::MAX);
+                ra.cmp(&rb)
+            })
     });
 
     // Assign ranks based on score
@@ -71,15 +98,10 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         let winner_text = score_counts
             .first()
             .map_or("No winner".to_string(), |c| c.option_text.clone());
-        let winner_id = score_counts
-            .first()
-            .map_or("".to_string(), |c| c.option_id.clone());
         summary.push_str("Not enough options for a runoff.");
         return PollResults {
             winner: winner_text,
             summary,
-            winner_id,
-            raw_results: score_counts,
         };
     }
 
@@ -124,18 +146,25 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
     }
     summary.push('\n');
 
-    let (winner_id, winner_text, winner_score) = if runoff_votes1 >= runoff_votes2 {
-        (
-            candidate1_id.clone(),
-            candidate1_text.clone(),
-            runoff_votes1,
-        )
+    let (winner_text, winner_score) = if runoff_votes1 > runoff_votes2 {
+        (candidate1_text.clone(), runoff_votes1)
+    } else if runoff_votes2 > runoff_votes1 {
+        (candidate2_text.clone(), runoff_votes2)
     } else {
-        (
-            candidate2_id.clone(),
-            candidate2_text.clone(),
-            runoff_votes2,
-        )
+        // Runoff tie: use tiebreak permutation order
+        let rank1 = tiebreak_rank
+            .get(candidate1_text)
+            .copied()
+            .unwrap_or(usize::MAX);
+        let rank2 = tiebreak_rank
+            .get(candidate2_text)
+            .copied()
+            .unwrap_or(usize::MAX);
+        if rank1 <= rank2 {
+            (candidate1_text.clone(), runoff_votes1)
+        } else {
+            (candidate2_text.clone(), runoff_votes2)
+        }
     };
 
     summary.push_str(&format!("Total voters: {}", voters.len()));
@@ -146,7 +175,5 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
             winner_text, winner_score
         ),
         summary,
-        winner_id,
-        raw_results: score_counts, // Return the scoring phase results as raw
     }
 }
