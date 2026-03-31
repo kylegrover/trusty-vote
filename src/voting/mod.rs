@@ -2,7 +2,6 @@ pub mod approval;
 pub mod plurality;
 pub mod ranked;
 pub mod star;
-pub mod tiebreak;
 
 // Generic structure for poll results
 pub struct PollResults {

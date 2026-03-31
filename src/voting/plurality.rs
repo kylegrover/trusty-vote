@@ -1,5 +1,5 @@
 use crate::models::{Poll, Vote};
-use crate::voting::tiebreak;
+use startie;
 use crate::voting::{PollResults, VoteCount};
 use std::collections::HashMap;
 
@@ -33,7 +33,7 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
             (text, *score as i64)
         })
         .collect();
-    let tiebreak_order = tiebreak::permute(&tiebreak_scores, b"");
+    let tiebreak_order = startie::permute(&tiebreak_scores, b"");
     let tiebreak_rank: HashMap<String, usize> = tiebreak_order
         .iter()
         .enumerate()
