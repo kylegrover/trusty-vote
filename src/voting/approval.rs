@@ -1,5 +1,6 @@
 use crate::models::{Poll, Vote};
 use crate::voting::{PollResults, VoteCount};
+use startie;
 use std::collections::HashMap;
 
 pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
@@ -24,6 +25,21 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         voters.insert(vote.user_id.clone());
     }
 
+    // Build deterministic tiebreak ordering
+    let tiebreak_scores: Vec<(String, i64)> = option_approvals
+        .iter()
+        .map(|(id, approvals)| {
+            let text = option_text.get(id).cloned().unwrap_or_default();
+            (text, *approvals as i64)
+        })
+        .collect();
+    let tiebreak_order = startie::permute(&tiebreak_scores, b"");
+    let tiebreak_rank: HashMap<String, usize> = tiebreak_order
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.clone(), i))
+        .collect();
+
     // Build vote counts
     let mut vote_counts: Vec<VoteCount> = option_approvals
         .iter()
@@ -37,11 +53,22 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         })
         .collect();
 
-    // Sort by score (highest first)
+    // Sort by score (highest first), tiebreak by startie permutation order
     vote_counts.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                let ra = tiebreak_rank
+                    .get(&a.option_text)
+                    .copied()
+                    .unwrap_or(usize::MAX);
+                let rb = tiebreak_rank
+                    .get(&b.option_text)
+                    .copied()
+                    .unwrap_or(usize::MAX);
+                ra.cmp(&rb)
+            })
     });
 
     // Assign ranks

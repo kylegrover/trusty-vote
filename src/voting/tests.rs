@@ -260,6 +260,51 @@ fn ranked_choice_finds_unbreakable_tie() {
 }
 
 #[test]
+fn approval_no_votes_returns_no_winner() {
+    let poll = build_poll(VotingMethod::Approval, &["A", "B"]);
+    let results = approval::calculate_results(&poll, &[]);
+    assert_eq!(results.winner, "No winner");
+    assert_eq!(results.summary, "No votes were cast.");
+}
+
+#[test]
+fn approval_tie_winner_is_deterministic() {
+    let poll = build_poll(VotingMethod::Approval, &["Alpha", "Beta"]);
+    let votes = vec![
+        build_vote("u1", &poll.id, &poll.options[0].id, 1), // Alpha
+        build_vote("u2", &poll.id, &poll.options[1].id, 1), // Beta
+    ];
+    let r1 = approval::calculate_results(&poll, &votes);
+    let r2 = approval::calculate_results(&poll, &votes);
+    // Both calls with the same input must agree on a winner (startie is deterministic).
+    assert_eq!(r1.winner, r2.winner);
+    assert!(r1.winner.contains("(1 approvals)"));
+}
+
+#[test]
+fn star_no_votes_returns_no_winner() {
+    let poll = build_poll(VotingMethod::Star, &["Alpha", "Beta"]);
+    let results = star::calculate_results(&poll, &[]);
+    // All options score 0; scoring phase completes, runoff yields no preference votes.
+    assert!(results.winner.contains("Alpha") || results.winner.contains("Beta"));
+    assert!(results.summary.contains("Alpha: 0 total stars"));
+    assert!(results.summary.contains("Beta: 0 total stars"));
+}
+
+#[test]
+fn ranked_all_ratings_zero_returns_no_winner() {
+    let poll = build_poll(VotingMethod::Ranked, &["Alpha", "Beta"]);
+    let votes = vec![
+        // Voters submit ballots but rank nothing (all zeros).
+        build_vote("u1", &poll.id, &poll.options[0].id, 0),
+        build_vote("u2", &poll.id, &poll.options[1].id, 0),
+    ];
+    let results = ranked::calculate_results(&poll, &votes);
+    assert_eq!(results.winner, "No winner");
+    assert_eq!(results.summary, "No valid rankings were submitted.");
+}
+
+#[test]
 fn ranked_choice_multiple_rankings_on_same_candidate_picks_highest() {
     let poll = build_poll(VotingMethod::Ranked, &["Alpha", "Beta"]);
     let votes = vec![
