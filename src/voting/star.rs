@@ -35,19 +35,16 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
         }
     }
 
-    // Build deterministic tiebreak ordering using startie permutation
+    // Build deterministic tiebreak ordering using startie permutation. Use option IDs as unique keys.
     let tiebreak_scores: Vec<(String, i64)> = option_scores
         .iter()
-        .map(|(id, score)| {
-            let text = option_text.get(id).cloned().unwrap_or_default();
-            (text, *score as i64)
-        })
+        .map(|(id, score)| (id.clone(), *score as i64))
         .collect();
     let tiebreak_order = startie::permute(&tiebreak_scores, b"");
     let tiebreak_rank: HashMap<String, usize> = tiebreak_order
         .iter()
         .enumerate()
-        .map(|(i, name)| (name.clone(), i))
+        .map(|(i, option_id)| (option_id.clone(), i))
         .collect();
 
     let mut score_counts: Vec<VoteCount> = option_scores
@@ -67,11 +64,11 @@ pub fn calculate_results(poll: &Poll, votes: &[Vote]) -> PollResults {
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| {
                 let ra = tiebreak_rank
-                    .get(&a.option_text)
+                    .get(&a.option_id)
                     .copied()
                     .unwrap_or(usize::MAX);
                 let rb = tiebreak_rank
-                    .get(&b.option_text)
+                    .get(&b.option_id)
                     .copied()
                     .unwrap_or(usize::MAX);
                 ra.cmp(&rb)

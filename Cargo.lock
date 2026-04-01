@@ -2553,6 +2553,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "startie"
 version = "0.1.0"
+source = "git+https://github.com/kylegrover/startie.git?branch=kylegrover%2Fquirk-fixes#3bafe987b8ee6552a5e4df921c70ef01a0e559ab"
 dependencies = [
  "sha2",
 ]

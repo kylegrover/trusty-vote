@@ -12,8 +12,8 @@ tokio = { version = "1.21", features = ["macros", "rt-multi-thread"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }
 dotenvy = "0.15"
 
-# STAR tie-breaking
-startie = { path = "../startie/rust" }
+# STAR tie-breaking (git-based reference of my fork until it's merged upstream and a crate is published)
+startie = { git = "https://github.com/kylegrover/startie.git", branch = "kylegrover/quirk-fixes", package = "startie", default-features = false }
 
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }

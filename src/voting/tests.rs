@@ -292,6 +292,19 @@ fn star_no_votes_returns_no_winner() {
 }
 
 #[test]
+fn star_duplicate_option_text_uses_deterministic_tiebreak() {
+    let poll = build_poll(VotingMethod::Star, &["Same", "Same"]);
+    let votes = vec![
+        build_vote("u1", &poll.id, &poll.options[0].id, 5),
+        build_vote("u2", &poll.id, &poll.options[1].id, 5),
+    ];
+    let results1 = star::calculate_results(&poll, &votes);
+    let results2 = star::calculate_results(&poll, &votes);
+    assert_eq!(results1.winner, results2.winner);
+    assert!(results1.summary.contains("Same: 5 total stars"));
+}
+
+#[test]
 fn ranked_all_ratings_zero_returns_no_winner() {
     let poll = build_poll(VotingMethod::Ranked, &["Alpha", "Beta"]);
     let votes = vec![
